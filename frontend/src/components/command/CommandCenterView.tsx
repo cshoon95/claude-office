@@ -111,6 +111,7 @@ export function CommandCenterView({
 
   return (
     <div className="flex-grow flex gap-2 overflow-hidden min-h-0">
+      <div className="hidden md:flex">{/* (로컬 커스텀) 휴대폰에선 사이드바 숨김 */}
       <SessionSidebar
         sessions={sessions}
         sessionsLoading={sessionsLoading}
@@ -121,14 +122,15 @@ export function CommandCenterView({
         onDeleteSession={onDeleteSession}
         onRenameSession={onRenameSession}
       />
+      </div>
 
-      <div className="flex-grow flex flex-col gap-2 min-h-0">
+      <div className="flex-grow flex flex-col gap-2 min-h-0 min-w-0">
         {/* Summary bar */}
-        <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-slate-800 bg-slate-900 shrink-0">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 rounded-lg border border-slate-800 bg-slate-900 shrink-0">
           <span className="text-sm font-bold text-white tracking-tight">
             {t("commandCenter.title")}
           </span>
-          <div className="flex items-center gap-3 flex-grow">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 flex-grow">
             {ZONE_ORDER.map((key) => {
               const zone = ZONE_BY_KEY[key];
               return (
@@ -148,7 +150,7 @@ export function CommandCenterView({
           <button
             type="button"
             onClick={() => setAddOpen(true)}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 transition-colors whitespace-nowrap"
           >
             ＋ 캐릭터 추가
           </button>

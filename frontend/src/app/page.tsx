@@ -230,6 +230,7 @@ export default function V2TestPage(): React.ReactNode {
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
+    if (window.innerWidth < 768) useNavigationStore.getState().goToCommand();  // (로컬 커스텀) 휴대폰은 전체 보기부터
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
@@ -449,6 +450,14 @@ export default function V2TestPage(): React.ReactNode {
 
         {isMobile && (
           <div className="flex items-center gap-2">
+            {/* (로컬 커스텀) 모바일에서도 전체 보기(Command Center) ↔ 세션 보기 */}
+            <button
+              type="button"
+              onClick={() => (view === "command" ? useNavigationStore.getState().goToSingle() : useNavigationStore.getState().goToCommand())}
+              className="px-2.5 py-1 rounded-md text-xs font-bold text-white bg-sky-600 hover:bg-sky-500"
+            >
+              {view === "command" ? "세션 보기" : "전체 보기"}
+            </button>
             <div
               className={`w-2 h-2 rounded-full ${
                 isConnected ? "bg-emerald-400 animate-pulse" : "bg-rose-500"
@@ -482,7 +491,18 @@ export default function V2TestPage(): React.ReactNode {
       {/* ----------------------------------------------------------------
           Main Content
       ---------------------------------------------------------------- */}
-      {isMobile ? (
+      {isMobile && view === "command" ? (
+        <CommandCenterView
+          sessions={sessions}
+          sessionsLoading={sessionsLoading}
+          sessionId={sessionId}
+          isCollapsed={true}
+          onToggleCollapsed={() => {}}
+          onSessionSelect={handleSessionSelect}
+          onDeleteSession={setSessionPendingDelete}
+          onRenameSession={handleRenameSession}
+        />
+      ) : isMobile ? (
         <div className="flex-grow flex flex-col gap-1.5 overflow-hidden min-h-0">
           <div className="flex-[3] border border-slate-800 rounded-lg shadow-2xl bg-slate-900 overflow-hidden relative min-h-0">
             <OfficeGame />
