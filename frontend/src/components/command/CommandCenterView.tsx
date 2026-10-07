@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { SessionSidebar } from "@/components/layout/SessionSidebar";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useOverviewWebSocket } from "@/hooks/useOverviewWebSocket";
@@ -18,6 +18,8 @@ import {
 import { PeerPopup, type PeerPopupState } from "./PeerPopup";
 import { ZONE_BY_KEY, ZONE_ORDER } from "./layout";
 import { sessionMatchesFloor } from "./sessionMatchesFloor";
+import { ManualTaskModal } from "./ManualTaskModal";
+import { useManualStore } from "./manualApi";
 
 function CommandCenterLoading(): ReactNode {
   const { t } = useTranslation();
@@ -69,6 +71,13 @@ export function CommandCenterView({
   const { peers, counts, overflow, summary } = useCommandCenterPeers(sessions);
 
   const [popup, setPopup] = useState<PeerPopupState | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const refreshManual = useManualStore((s) => s.refresh);
+  useEffect(() => {
+    void refreshManual();
+    const t = setInterval(() => void refreshManual(), 10000);
+    return () => clearInterval(t);
+  }, [refreshManual]);
 
   // Click a peer → open its popover (choose: open terminal, or drill in).
   const handlePeerActivate = useCallback(
@@ -136,6 +145,13 @@ export function CommandCenterView({
               );
             })}
           </div>
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 transition-colors"
+          >
+            ＋ 캐릭터 추가
+          </button>
           <span
             className={`flex items-center gap-1.5 text-xs font-mono ${
               connected ? "text-emerald-400" : "text-rose-500"
@@ -162,6 +178,7 @@ export function CommandCenterView({
         </div>
       </div>
 
+      <ManualTaskModal open={addOpen} onClose={() => setAddOpen(false)} />
       <PeerPopup
         popup={popup}
         onClose={() => setPopup(null)}

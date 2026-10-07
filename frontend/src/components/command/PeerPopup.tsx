@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Terminal, ArrowRight } from "lucide-react";
 import { useAttentionStore } from "@/stores/attentionStore";
 import { useTranslation } from "@/hooks/useTranslation";
 import { ZONE_BY_KEY } from "./layout";
 import type { CommandPeer } from "./useCommandCenterPeers";
+import { ZONE_ORDER } from "./layout";
+import { manualApi, useManualStore } from "./manualApi";
+import { ZONE_KO } from "./ManualTaskModal";
 
 const POPUP_WIDTH = 260;
 const POPUP_MARGIN = 16;
@@ -35,6 +38,11 @@ export function PeerPopup({
 }: PeerPopupProps): ReactNode {
   const { t } = useTranslation();
   const focusAgentTerminal = useAttentionStore((s) => s.focusAgentTerminal);
+  const manual = useManualStore((s) => (popup ? s.tasks[popup.peer.sessionId] : undefined));
+  const [noteDraft, setNoteDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const popupSid = popup?.peer.sessionId;
+  useEffect(() => setNoteDraft(null), [popupSid]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -130,6 +138,36 @@ export function PeerPopup({
           )}
         </div>
 
+        {manual ? (
+          <div className="space-y-2">
+            <div className="text-[11px] text-neutral-500">칸 옮기기</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {ZONE_ORDER.map((k) => {
+                const z = ZONE_BY_KEY[k];
+                const on = manual.bucket === k;
+                return (
+                  <button key={k} disabled={busy || on}
+                    onClick={async () => { setBusy(true); try { await manualApi.update(manual.id, { bucket: k }); onClose(); } finally { setBusy(false); } }}
+                    className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-bold border ${on ? "text-white" : "text-neutral-300 border-neutral-700 hover:border-neutral-500"} disabled:cursor-default`}
+                    style={on ? { borderColor: z.cssColor, backgroundColor: `${z.cssColor}33` } : undefined}>
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: z.cssColor }} />
+                    {ZONE_KO[k]}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex gap-1.5">
+              <input value={noteDraft ?? manual.note} onChange={(e) => setNoteDraft(e.target.value)} maxLength={200} placeholder="메모(말풍선)"
+                className="flex-1 min-w-0 bg-neutral-800 border border-neutral-700 rounded-md px-2 py-1 text-[11px] text-white focus:outline-none focus:border-sky-500" />
+              <button disabled={busy || noteDraft === null}
+                onClick={async () => { setBusy(true); try { await manualApi.update(manual.id, { note: noteDraft ?? "" }); setNoteDraft(null); onClose(); } finally { setBusy(false); } }}
+                className="px-2 rounded-md text-[11px] font-bold text-white bg-sky-600 hover:bg-sky-500 disabled:opacity-40">저장</button>
+            </div>
+            <button disabled={busy}
+              onClick={async () => { setBusy(true); try { await manualApi.remove(manual.id); onClose(); } finally { setBusy(false); } }}
+              className="w-full py-1.5 rounded-md text-[11px] font-bold text-rose-300 bg-rose-500/15 hover:bg-rose-500/25">사무실에서 빼기</button>
+          </div>
+        ) : (
         <div className="flex gap-2">
           <button
             onClick={handleFocusTerminal}
@@ -146,6 +184,7 @@ export function PeerPopup({
             {t("commandCenter.popup.drillIn")}
           </button>
         </div>
+        )}
       </div>
     </div>
   );
