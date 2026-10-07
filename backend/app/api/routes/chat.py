@@ -82,7 +82,8 @@ async def _guard(request: Request) -> None:
     X-Pixel-Office 헤더(교차 출처면 preflight 강제) + Origin 이 있으면 Host 와 같거나
     개발용 CORS 허용 목록(make dev 의 :3000)에 있어야 한다."""
     if not _flag_path().exists():
-        raise HTTPException(status_code=403, detail=OFF_MSG)
+        # 화면이 글자가 아닌 code 로 알아보게(문구는 바뀔 수 있다)
+        raise HTTPException(status_code=403, detail={"code": "chat_off", "message": OFF_MSG})
     if request.headers.get("x-pixel-office") != "1":
         raise HTTPException(status_code=403, detail="X-Pixel-Office 헤더가 필요해요")
     origin = request.headers.get("origin")
@@ -518,7 +519,8 @@ async def get_run(run_id: str, after: int = 0) -> dict[str, Any]:
         raise HTTPException(
             status_code=404, detail="그 실행 기록이 없어요(서버가 다시 켜졌을 수 있어요)"
         )
-    return {**run.summary(), "events": [e for e in run.events if e["seq"] > after]}
+    # seq 는 항상 (목록 위치 + 1) 이라 after 다음부터 잘라 주면 된다
+    return {**run.summary(), "events": run.events[max(after, 0) :]}
 
 
 @router.post("/runs/{run_id}/stop")

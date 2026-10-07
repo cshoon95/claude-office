@@ -99,7 +99,7 @@ async def test_kill_switch_off(env: Path, client: httpx.AsyncClient) -> None:
     (env / "chat-flag").unlink()
     r = await client.get("/api/v1/chat/folders", headers=H)
     assert r.status_code == 403
-    assert "꺼져" in r.json()["detail"]
+    assert r.json()["detail"]["code"] == "chat_off"
     r = await client.post("/api/v1/chat/runs", json={"prompt": "hi"}, headers=H)
     assert r.status_code == 403
 
@@ -169,7 +169,9 @@ async def test_happy_path_new_folder(env: Path, tmp_path: Path, client: httpx.As
 
     # after= 로 이어 받기
     r = await client.get(f"/api/v1/chat/runs/{run_id}", params={"after": 3}, headers=H)
-    assert [e["seq"] for e in r.json()["events"]][0] == 4
+    seqs = [e["seq"] for e in r.json()["events"]]
+    assert seqs == list(range(4, len(body["events"]) + 1))
+    assert all(e["seq"] == i + 1 for i, e in enumerate(body["events"]))
     # 세션별 목록
     r = await client.get("/api/v1/chat/runs", params={"session_id": body["session_id"]}, headers=H)
     assert [x["run_id"] for x in r.json()] == [run_id]

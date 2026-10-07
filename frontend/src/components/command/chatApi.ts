@@ -116,22 +116,29 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     cache: "no-store",
   });
   if (!r.ok) {
-    let detail = "";
+    // 본문은 한 번만 읽는다(json() 실패 뒤 text() 는 이미 소비된 본문이라 못 읽음)
+    const raw = await r.text().catch(() => "");
+    let detail = raw;
+    let code: string | undefined;
     try {
-      const j = await r.json();
-      detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+      const d = (JSON.parse(raw) as { detail?: unknown }).detail;
+      if (typeof d === "string") detail = d;
+      else if (d && typeof d === "object" && "message" in d) {
+        detail = String((d as { message: unknown }).message);
+        code = (d as { code?: string }).code;
+      } else if (d !== undefined) detail = JSON.stringify(d);
     } catch {
-      detail = await r.text().catch(() => "");
+      // JSON 이 아니면 원문 그대로
     }
-    const err = new Error(detail || `요청 실패 (${r.status})`) as Error & { status?: number };
-    err.status = r.status;
-    throw err;
+    throw Object.assign(new Error(detail || `요청 실패 (${r.status})`), { status: r.status, code });
   }
   return (await r.json()) as T;
 }
 
+type ApiError = Error & { status?: number; code?: string };
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const isOff = (e: unknown) => (e as { status?: number }).status === 403 && errText(e).includes("꺼져");
+// 서버 스위치가 꺼짐 — 문구가 아니라 code 로 알아본다
+const isOff = (e: unknown) => (e as ApiError).code === "chat_off";
 
 // 실행 id → 지금 그 실행이 붙어 있는 대화 키(새 대화가 세션 id 로 옮겨가면 바뀐다)
 const runKey = new Map<string, string>();
