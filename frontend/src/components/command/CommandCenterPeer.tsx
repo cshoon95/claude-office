@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTick } from "@pixi/react";
-import { Graphics, Texture } from "pixi.js";
+import { Assets, Graphics, Rectangle, Texture } from "pixi.js";
 import type { Position } from "@/types";
 import { useMotionStore, selectMotionPos } from "@/systems/commandCenterMotion";
 import { ZONE_BY_KEY, TOP_WALL_H, EXIT_DOOR_X } from "./layout";
@@ -157,6 +157,33 @@ function drawCharacter(g: Graphics, L: Look, accent: number, loud: boolean, fram
   if (loud) { g.roundRect(ox - 22, -76, 46 + DEPTH, 80, 10); g.stroke({ color: accent, width: 2.5, alpha: 0.9 }); }
 }
 
+
+// ── Pixel Agents 캐릭터(MIT, pixel-agents-hq/pixel-agents · 원화 JIK-A-4 Metro City) ──
+// char_N.png = 16×32 프레임 7열 × 3행(정면·뒷면·옆면). 정면 0~2 걷기, 3 대기, 4 손들기, 5~6 타자.
+const PA_SHEETS = 6;
+const paFrames = new Map<number, Texture[]>();
+const paLoading = new Map<number, Promise<Texture[]>>();
+function loadPaFrames(n: number): Promise<Texture[]> {
+  const hit = paLoading.get(n);
+  if (hit) return hit;
+  const pr = Assets.load<Texture>(`/sprites/pixel-agents/char_${n}.png`).then((tex) => {
+    tex.source.scaleMode = "nearest";
+    const frames: Texture[] = [];
+    for (let row = 0; row < 3; row++)
+      for (let col = 0; col < 7; col++)
+        frames.push(new Texture({ source: tex.source, frame: new Rectangle(col * 16, row * 32, 16, 32) }));
+    paFrames.set(n, frames);
+    return frames;
+  });
+  paLoading.set(n, pr);
+  return pr;
+}
+function sheetFor(id: string): number {
+  let h = 2166136261;
+  for (const c of id) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  return h % PA_SHEETS;
+}
+
 // 말풍선 줄바꿈: 한 줄 14자, 최대 3줄
 function wrap3(text: string, per = 14, max = 3): string[] {
   const t = text.replace(/\s+/g, " ").trim();
@@ -176,7 +203,7 @@ const BODY_W = 40;
 const BODY_H = 58;
 const HEAD_R = 13;
 const HEAD_CY = -BODY_H + HEAD_R + 2;
-const NAMEPLATE_Y = -BODY_H - 46;
+const NAMEPLATE_Y = -BODY_H - 40;
 const TODO_PROGRESS_Y = NAMEPLATE_Y + 9;
 
 interface CommandCenterPeerProps {
@@ -301,6 +328,14 @@ function CommandCenterPeerComponent({
 
   // 세션마다 고정된 생김새(로컬 커스텀)
   const look = lookFor(peer.sessionId);
+  const sheet = sheetFor(peer.sessionId);
+  const [paTex, setPaTex] = useState<Texture[] | null>(() => paFrames.get(sheet) ?? null);
+  useEffect(() => {
+    if (paTex) return;
+    let alive = true;
+    loadPaFrames(sheet).then((f) => alive && setPaTex(f)).catch(() => {});
+    return () => { alive = false; };
+  }, [sheet, paTex]);
   const drawBody = useCallback(
     (g: Graphics) => {
       g.clear();
@@ -362,6 +397,16 @@ function CommandCenterPeerComponent({
     [onActivate, peer],
   );
 
+  // 정면 행: 걷기 0-1-2-1, 작업 중 타자 5-6, 대기 4(손들기), 그 외 0
+  const paCol = walking
+    ? [0, 1, 2, 1][Math.floor(now / 140) % 4]
+    : peer.bucket === "working"
+      ? 5 + (Math.floor(now / 260) % 2)
+      : isNeedsYou
+        ? 4
+        : 0;
+  const paTexture = paTex ? paTex[paCol] : null;
+
   return (
     <pixiContainer
       x={pos.x}
@@ -389,8 +434,12 @@ function CommandCenterPeerComponent({
         </pixiContainer>
       )}
 
-      <pixiContainer y={bob} scale={1.3}>
-        <pixiGraphics draw={drawBody} />
+      <pixiContainer y={bob}>
+        {paTexture ? (
+          <pixiSprite texture={paTexture} anchor={{ x: 0.5, y: 1 }} y={6} scale={3} roundPixels />
+        ) : (
+          <pixiGraphics draw={drawBody} />
+        )}
       </pixiContainer>
 
       {/* Project nameplate */}
