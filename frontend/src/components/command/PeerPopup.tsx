@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Terminal, ArrowRight } from "lucide-react";
 import { useAttentionStore } from "@/stores/attentionStore";
@@ -65,6 +65,17 @@ export function PeerPopup({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [popup, handleKeyDown]);
 
+  // (로컬 커스텀) 실제 높이를 재서 아래로 넘치면 위로 올린다(내용에 따라 높이가 다르다)
+  const boxRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const h = el.offsetHeight;
+    const top = parseFloat(el.style.top) || 0;
+    const maxTop = window.innerHeight - h - POPUP_MARGIN;
+    if (top > maxTop) el.style.top = `${Math.max(POPUP_MARGIN, maxTop)}px`;
+  });
+
   if (!popup) return null;
   if (typeof document === "undefined") return null;
 
@@ -74,15 +85,17 @@ export function PeerPopup({
   // Viewport-clamped positioning.
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  // (로컬 커스텀) 아주 좁은 화면에선 폭도 줄인다
+  const width = Math.min(POPUP_WIDTH, vw - 2 * POPUP_MARGIN);
   let x = popup.x + 16;
   let y = popup.y - 40;
-  if (x + POPUP_WIDTH > vw - POPUP_MARGIN) x = popup.x - POPUP_WIDTH - 16;
-  if (y + 260 > vh - POPUP_MARGIN) y = vh - 260 - POPUP_MARGIN;
+  if (x + width > vw - POPUP_MARGIN) x = popup.x - width - 16;
+  if (y + 260 > vh - POPUP_MARGIN) y = vh - 260 - POPUP_MARGIN; // 대략값 — 위 layout effect 가 실제 높이로 다시 맞춘다
   if (y < POPUP_MARGIN) y = POPUP_MARGIN;
   // (로컬 커스텀) 좁은 화면(휴대폰)에선 왼쪽으로 밀려 잘리지 않게 가운데 정렬하고,
   // 어떤 경우든 화면 안으로 끌어온다
-  if (vw < 640) x = (vw - POPUP_WIDTH) / 2;
-  x = Math.max(POPUP_MARGIN, Math.min(x, vw - POPUP_WIDTH - POPUP_MARGIN));
+  if (vw < 640) x = (vw - width) / 2;
+  x = Math.max(POPUP_MARGIN, Math.min(x, vw - width - POPUP_MARGIN));
 
   const isMacHost = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
 
@@ -105,8 +118,9 @@ export function PeerPopup({
       }}
     >
       <div
+        ref={boxRef}
         className="absolute bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl p-4"
-        style={{ left: x, top: y, width: POPUP_WIDTH }}
+        style={{ left: x, top: y, width }}
       >
         <div className="flex items-center gap-2 mb-3">
           <div
