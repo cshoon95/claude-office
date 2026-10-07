@@ -35,6 +35,11 @@ _LOCALHOST_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 ALLOW_LAN = _os.environ.get("CLAUDE_OFFICE_ALLOW_LAN", "") in ("1", "true", "yes")
 LAN_TOKEN = _os.environ.get("CLAUDE_OFFICE_LAN_TOKEN", "")
 LAN_COOKIE = "co_lan"
+# 홈 화면 앱(PWA) 정보·아이콘. iOS 는 이것들을 쿠키 없이 가져가므로 토큰 없이 연다
+# (공개돼도 되는 정적 파일뿐 — 세션 내용은 담겨 있지 않다).
+LAN_PUBLIC_PATHS = frozenset(
+    {"/manifest.webmanifest", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png"}
+)
 
 
 def is_lan_host(host: str | None) -> bool:
@@ -84,6 +89,8 @@ class LocalhostOnlyMiddleware(BaseHTTPMiddleware):
         if is_lan_host(client_host):
             query_token = request.query_params.get("token")
             if lan_token_ok(request.cookies.get(LAN_COOKIE)):
+                return await call_next(request)
+            if request.method == "GET" and request.url.path in LAN_PUBLIC_PATHS:
                 return await call_next(request)
             if lan_token_ok(query_token):
                 response = await call_next(request)
