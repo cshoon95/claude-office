@@ -185,7 +185,7 @@ function sheetFor(id: string): number {
 }
 
 // 말풍선 줄바꿈: 한 줄 14자, 최대 3줄
-function wrap3(text: string, per = 11, max = 3): string[] {
+function wrap3(text: string, per = 12, max = 3): string[] {
   const t = text.replace(/\s+/g, " ").trim();
   const lines: string[] = [];
   for (let i = 0; i < t.length && lines.length < max; i += per) lines.push(t.slice(i, i + per));
@@ -422,7 +422,7 @@ function CommandCenterPeerComponent({
 
       {/* 말풍선(작업 내용 · 대기 · 심부름) — 레트로 도트 박스, 최대 3줄 */}
       {lines.length > 0 && (
-        <pixiContainer y={NAMEPLATE_Y - 22 + bob - (peer.slotIndex % 2 ? 78 : 0)} scale={0.8} alpha={bubbleAlpha}>
+        <pixiContainer y={NAMEPLATE_Y - 22 + bob} scale={0.8} alpha={bubbleAlpha}>
           <pixiGraphics draw={drawSpeech} />
           <pixiText
             key={fontReady ? "f1" : "f0"}
