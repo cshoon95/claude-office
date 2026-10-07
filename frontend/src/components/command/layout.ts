@@ -104,20 +104,24 @@ export const EXIT_DOOR_BASE_Y = TOP_WALL_H;
 export const EXIT_DOOR_X = ZONE_BY_KEY.ended.x + ZONE_BY_KEY.ended.w / 2;
 
 // Workstation grid within a column.
-// (로컬 커스텀) 2×4 → 1×3: 말풍선이 옆자리·아랫줄 캐릭터를 가리지 않게 칸마다 한 줄, 줄 간격 넉넉히.
-const SLOT_COLS = 1;
-const SLOT_ROWS = 3;
+// (로컬 커스텀) 책상은 칸마다 가운데 한 줄 3개(말풍선이 서로 안 가리게 넉넉히).
+// 4번째 세션부터는 책상 없이 오른쪽 옆에 "서서" 보인다(최대 6명) — 안 보이게 숨지 않도록.
+const DESK_ROWS = 3;
 const HEADER_H = 44;
 const ROW_TOP = FLOOR_TOP + HEADER_H + 190; // first row's feet (위에 말풍선 자리)
 const ROW_GAP = 225;
+const STANDING_DX = 92; // 4~6번째: 가운데 줄에서 오른쪽으로
 
-/** Max visible workstations per column before collapsing to "+N more". */
-export const MAX_SLOTS = SLOT_COLS * SLOT_ROWS; // 3
+/** 책상(소파)이 놓이는 자리 수. */
+export const DESK_SLOTS = DESK_ROWS; // 3
+/** Max visible agents per column before collapsing to "+N more". */
+export const MAX_SLOTS = DESK_ROWS * 2; // 6
 
 /** Pixel position (agent feet) for the slot at *index* within *zone* (column). */
 export function slotPosition(zone: ZoneDef, index: number): Position {
-  const row = Math.floor(index / SLOT_COLS);
-  const x = zone.x + zone.w / 2;
-  const y = ROW_TOP + row * ROW_GAP;
+  const row = index % DESK_ROWS;
+  const standing = index >= DESK_ROWS;
+  const x = zone.x + zone.w / 2 + (standing ? STANDING_DX : 0);
+  const y = ROW_TOP + row * ROW_GAP + (standing ? 24 : 0);
   return { x, y };
 }

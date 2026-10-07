@@ -180,8 +180,9 @@ export function CommandCenterView({
         </div>
       </div>
 
-      <ManualTaskModal open={addOpen} onClose={() => setAddOpen(false)} />
+      {addOpen && <ManualTaskModal open onClose={() => setAddOpen(false)} />}
       <PeerPopup
+        key={popup?.peer.sessionId ?? "none"}
         popup={popup}
         onClose={() => setPopup(null)}
         onDrillIn={handleDrillIn}

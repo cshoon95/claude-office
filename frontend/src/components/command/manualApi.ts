@@ -1,8 +1,9 @@
 // (로컬 커스텀) 직접 추가하는 캐릭터 API — backend /api/v1/manual
 import { create } from "zustand";
+import { apiFetch } from "@/utils/api";
 import type { ZoneKey } from "./layout";
 
-const API = `${process.env.NEXT_PUBLIC_API_URL || ""}/api/v1/manual`;
+const PATH = "/api/v1/manual";
 
 export interface ManualTask {
   id: string;
@@ -15,28 +16,41 @@ export interface ManualTask {
 
 interface ManualStore {
   tasks: Record<string, ManualTask>; // sessionId → task
+  error: string | null;
   refresh: () => Promise<void>;
 }
 
 export const useManualStore = create<ManualStore>()((set) => ({
   tasks: {},
+  error: null,
   refresh: async () => {
     try {
-      const list: ManualTask[] = await fetch(API, { cache: "no-store" }).then((r) => r.json());
-      set({ tasks: Object.fromEntries(list.map((t) => [t.sessionId, t])) });
-    } catch {
-      /* 서버가 꺼져 있으면 무시 */
+      const r = await apiFetch(PATH, { cache: "no-store" });
+      if (!r.ok) throw new Error(`${r.status}`);
+      const list: ManualTask[] = await r.json();
+      set({ tasks: Object.fromEntries(list.map((t) => [t.sessionId, t])), error: null });
+    } catch (e) {
+      set({ error: `직접 추가한 캐릭터 목록을 못 불러왔어요 (${String(e)})` });
     }
   },
 }));
 
 async function call(method: string, path: string, body?: unknown): Promise<void> {
-  const r = await fetch(`${API}${path}`, {
+  const r = await apiFetch(`${PATH}${path}`, {
     method,
     headers: { "content-type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  if (!r.ok) {
+    let detail = "";
+    try {
+      const j = await r.json();
+      detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+    } catch {
+      detail = await r.text().catch(() => "");
+    }
+    throw new Error(detail || `요청 실패 (${r.status})`);
+  }
   await useManualStore.getState().refresh();
 }
 

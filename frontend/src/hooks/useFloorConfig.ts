@@ -3,7 +3,9 @@
 import { useEffect } from "react";
 import { useNavigationStore } from "@/stores/navigationStore";
 
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "http://localhost:8000")}/api/v1`;
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL ||
+  // (로컬 커스텀) 접속한 호스트의 :8000 — 휴대폰(LAN)·next dev(:3000) 모두 백엔드를 가리키게(WS 규칙과 동일)
+  (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:8000` : "http://localhost:8000")}/api/v1`;
 
 /**
  * Fetches building configuration from the backend and stores it

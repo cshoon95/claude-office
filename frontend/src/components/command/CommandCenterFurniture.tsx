@@ -6,7 +6,7 @@ import type { OfficeTextures } from "@/hooks/useOfficeTextures";
 import { useExitStore, selectDoorOpen } from "@/systems/exitAnimation";
 import {
   ZONES,
-  MAX_SLOTS,
+  DESK_SLOTS,
   EXIT_DOOR_BASE_Y,
   EXIT_DOOR_X,
   slotPosition,
@@ -258,7 +258,7 @@ function zoneFurniture(zone: ZoneDef, textures: OfficeTextures): ReactNode[] {
     return [<ExitDoor key={`${zone.key}-exit`} textures={textures} />];
   }
   const items: ReactNode[] = [];
-  for (let slot = 0; slot < MAX_SLOTS; slot++) {
+  for (let slot = 0; slot < DESK_SLOTS; slot++) {
     const p = slotPosition(zone, slot);
     if (zone.kind === "lounge") {
       items.push(<Couch key={`${zone.key}-${slot}`} x={p.x} y={p.y} />);

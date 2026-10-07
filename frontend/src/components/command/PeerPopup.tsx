@@ -41,8 +41,15 @@ export function PeerPopup({
   const manual = useManualStore((s) => (popup ? s.tasks[popup.peer.sessionId] : undefined));
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const popupSid = popup?.peer.sessionId;
-  useEffect(() => setNoteDraft(null), [popupSid]);
+  const [actErr, setActErr] = useState("");
+  // 다른 캐릭터를 열면 부모가 key 를 바꿔 새로 마운트하므로 메모 초안·오류는 자동 초기화
+  // 버튼 동작 공통: 실패하면 팝업을 닫지 않고 이유를 보여준다
+  const act = async (fn: () => Promise<void>, after?: () => void) => {
+    setBusy(true); setActErr("");
+    try { await fn(); after?.(); onClose(); }
+    catch (e) { setActErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -147,7 +154,7 @@ export function PeerPopup({
                 const on = manual.bucket === k;
                 return (
                   <button key={k} disabled={busy || on}
-                    onClick={async () => { setBusy(true); try { await manualApi.update(manual.id, { bucket: k }); onClose(); } finally { setBusy(false); } }}
+                    onClick={() => act(() => manualApi.update(manual.id, { bucket: k }))}
                     className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-bold border ${on ? "text-white" : "text-neutral-300 border-neutral-700 hover:border-neutral-500"} disabled:cursor-default`}
                     style={on ? { borderColor: z.cssColor, backgroundColor: `${z.cssColor}33` } : undefined}>
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: z.cssColor }} />
@@ -160,12 +167,13 @@ export function PeerPopup({
               <input value={noteDraft ?? manual.note} onChange={(e) => setNoteDraft(e.target.value)} maxLength={200} placeholder="메모(말풍선)"
                 className="flex-1 min-w-0 bg-neutral-800 border border-neutral-700 rounded-md px-2 py-1 text-[11px] text-white focus:outline-none focus:border-sky-500" />
               <button disabled={busy || noteDraft === null}
-                onClick={async () => { setBusy(true); try { await manualApi.update(manual.id, { note: noteDraft ?? "" }); setNoteDraft(null); onClose(); } finally { setBusy(false); } }}
+                onClick={() => act(() => manualApi.update(manual.id, { note: noteDraft ?? "" }), () => setNoteDraft(null))}
                 className="px-2 rounded-md text-[11px] font-bold text-white bg-sky-600 hover:bg-sky-500 disabled:opacity-40">저장</button>
             </div>
             <button disabled={busy}
-              onClick={async () => { setBusy(true); try { await manualApi.remove(manual.id); onClose(); } finally { setBusy(false); } }}
+              onClick={() => act(() => manualApi.remove(manual.id))}
               className="w-full py-1.5 rounded-md text-[11px] font-bold text-rose-300 bg-rose-500/15 hover:bg-rose-500/25">사무실에서 빼기</button>
+            {actErr && <p className="text-[11px] text-rose-400 break-words">{actErr}</p>}
           </div>
         ) : (
         <div className="flex gap-2">

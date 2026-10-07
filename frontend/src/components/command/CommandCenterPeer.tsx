@@ -1,8 +1,8 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTick } from "@pixi/react";
-import { Assets, Graphics, Rectangle, Texture } from "pixi.js";
+import { Assets, type Container, Graphics, Rectangle, type Sprite, Texture } from "pixi.js";
 import type { Position } from "@/types";
 import { useMotionStore, selectMotionPos } from "@/systems/commandCenterMotion";
 import { ZONE_BY_KEY, TOP_WALL_H, EXIT_DOOR_X } from "./layout";
@@ -54,7 +54,6 @@ function walkAlong(e: Errand, dt: number): boolean {
 
 // ── 캐릭터 꾸미기: 16비트 레트로 픽셀 스프라이트(14×20 도트, 1도트 = 3px) ──
 // 세션 id 해시로 셔츠·피부·머리 모양·머리색·소품이 정해진다(같은 세션은 늘 같은 모습). 팔레트는 PICO-8 계열.
-const PX = 3;
 const SHIRTS = [0xff004d, 0x29adff, 0x00e436, 0xffa300, 0x7e2553, 0x83769c, 0xff77a8, 0x008751, 0xab5236, 0x1d2b53, 0x5fcde4, 0xd95763];
 const SKINS = [0xffccaa, 0xf2b48c, 0xd99a6c, 0xab7650, 0x7a4b2e];
 const HAIRS = [0x2b1d14, 0x5f3a1e, 0xab5236, 0xffd166, 0x1d1d2b, 0xff77a8, 0xc2c3c7, 0x4b7bd6];
@@ -176,6 +175,7 @@ function loadPaFrames(n: number): Promise<Texture[]> {
     return frames;
   });
   paLoading.set(n, pr);
+  pr.catch(() => paLoading.delete(n)); // 실패는 캐시하지 않음(다음에 다시 시도)
   return pr;
 }
 function sheetFor(id: string): number {
@@ -186,10 +186,10 @@ function sheetFor(id: string): number {
 
 // 말풍선 줄바꿈: 한 줄 14자, 최대 3줄
 function wrap3(text: string, per = 12, max = 3): string[] {
-  const t = text.replace(/\s+/g, " ").trim();
+  const t = Array.from(text.replace(/\s+/g, " ").trim()); // 코드포인트 단위(이모지 서로게이트 안 자르게)
   const lines: string[] = [];
-  for (let i = 0; i < t.length && lines.length < max; i += per) lines.push(t.slice(i, i + per));
-  if (t.length > per * max) lines[max - 1] = lines[max - 1].slice(0, per - 1) + "…";
+  for (let i = 0; i < t.length && lines.length < max; i += per) lines.push(t.slice(i, i + per).join(""));
+  if (t.length > per * max) lines[max - 1] = Array.from(lines[max - 1]).slice(0, per - 1).join("") + "…";
   return lines;
 }
 
@@ -202,10 +202,14 @@ function shortTask(s: string | null): string {
 // Body geometry (compact relative to the office BossSprite).
 const BODY_W = 40;
 const BODY_H = 58;
-const HEAD_R = 13;
-const HEAD_CY = -BODY_H + HEAD_R + 2;
 const NAMEPLATE_Y = -BODY_H - 58;
 const TODO_PROGRESS_Y = NAMEPLATE_Y + 9;
+const BUBBLE_Y = NAMEPLATE_Y - 22;
+// 렌더마다 새 객체를 만들지 않게(텍스트 스타일 재적용 방지)
+const BUBBLE_ANCHOR = { x: 0.5, y: 1 };
+const SPRITE_ANCHOR = { x: 0.5, y: 1 };
+const BUBBLE_STYLE = { fontFamily: "Galmuri11, Galmuri9, Apple SD Gothic Neo, sans-serif", fontSize: 26, lineHeight: 32, fill: 0x1a1c2c, align: "center" as const };
+const NAME_STYLE = { fontFamily: "monospace", fontSize: 20, fill: 0xffffff, fontWeight: "bold" as const };
 
 interface CommandCenterPeerProps {
   peer: CommandPeer;
@@ -232,61 +236,104 @@ function CommandCenterPeerComponent({
   const basePos = positionOverride ?? motionPos ?? peer.position;
   const alpha = alphaOverride ?? 1;
 
-  // ── 살아 있는 느낌: 프레임마다 시간 진행 + 쉬는 세션의 심부름 ──
-  const [now, setNow] = useState(0);
+  // ── 살아 있는 느낌(로컬 커스텀) ──
+  // 성능: 매 프레임 바뀌는 값(흔들림·깜빡임·걷는 위치·스프라이트 프레임)은 pixi 객체에 직접 넣고,
+  // React 는 말풍선 문구/심부름 단계가 바뀔 때만 다시 그린다(피어마다 60fps 재렌더 방지).
+  // 화면에 필요한 심부름 상태(단계·문구)만 state 로 — 나머지 진행 상황은 ref
+  const [view, setView] = useState<{ phase: ErrandPhase; text: string }>({ phase: "idle", text: "" });
   const [fontReady, setFontReady] = useState(false);
   useEffect(() => {
     if (typeof document === "undefined" || !document.fonts) return;
     document.fonts.load('26px "Galmuri11"').then(() => setFontReady(true)).catch(() => {});
   }, []);
-  const errand = useRef<Errand>({
-    phase: "idle",
-    nextAt: performance.now() + 4000 + Math.random() * 12000,
-    waypoints: [],
-    i: 0,
-    pos: null,
-    stayUntil: 0,
-    text: "",
-  });
+  const errand = useRef<Errand | null>(null);
+  useEffect(() => {
+    // 첫 심부름은 4~16초 뒤(렌더 중에 시간·난수를 쓰지 않도록 마운트 때 초기화)
+    errand.current = {
+      phase: "idle", nextAt: performance.now() + 4000 + Math.random() * 12000,
+      waypoints: [], i: 0, pos: null, stayUntil: 0, text: "",
+    };
+  }, []);
+  const rootRef = useRef<Container | null>(null);
+  const bodyRef = useRef<Container | null>(null);
+  const bubbleRef = useRef<Container | null>(null);
+  const spriteRef = useRef<Sprite | null>(null);
   const canWander = peer.bucket === "done" && !positionOverride;
-  useTick((ticker) => {
+  // tick 이 읽는 최신 값(콜백은 한 번만 등록)
+  const live = useRef({ bucket: peer.bucket, basePos, canWander, frames: null as Texture[] | null });
+  useLayoutEffect(() => {
+    live.current.bucket = peer.bucket;
+    live.current.basePos = basePos;
+    live.current.canWander = canWander;
+  });
+
+  const tick = useCallback((ticker: { deltaMS: number }) => {
     const t = performance.now();
     const dt = Math.min(ticker.deltaMS / 1000, 0.05);
+    const L = live.current;
     const e = errand.current;
-    if (!canWander) {
+    if (!e) return;
+    const before = e.phase;
+    if (!L.canWander) {
       if (e.phase !== "idle") Object.assign(e, { phase: "idle", pos: null });
     } else if (e.phase === "idle" && t > e.nextAt) {
       const pick = ERRANDS[Math.floor(Math.random() * ERRANDS.length)];
-      const home = basePos;
+      const home = L.basePos;
       e.waypoints = [{ ...home }, { x: home.x, y: WALK_Y }, { x: pick.x, y: WALK_Y }];
       Object.assign(e, { phase: "go", i: 0, pos: { ...home }, text: pick.text });
     } else if (e.phase === "go" && walkAlong(e, dt)) {
       Object.assign(e, { phase: "stay", stayUntil: t + DWELL_MS });
     } else if (e.phase === "stay" && t > e.stayUntil) {
       e.waypoints = [...e.waypoints].reverse();
-      e.waypoints[e.waypoints.length - 1] = { ...basePos };
+      e.waypoints[e.waypoints.length - 1] = { ...L.basePos };
       Object.assign(e, { phase: "back", i: 0 });
     } else if (e.phase === "back" && walkAlong(e, dt)) {
       Object.assign(e, { phase: "idle", pos: null, nextAt: t + 10000 + Math.random() * 20000 });
     }
-    setNow(t);
-  });
-  const e = errand.current;
-  const walking = e.phase === "go" || e.phase === "back";
-  const pos = e.pos ?? basePos;
-  // 몸 흔들림: 작업 중 = 타자(빠르고 잔잔), 대기 = 통통 튐, 걷기 = 걸음, 그 외 = 숨쉬기
-  const bob =
-    peer.bucket === "working"
-      ? Math.sin(now / 70) * 1.6
-      : isNeedsYou
-        ? -Math.abs(Math.sin(now / 180)) * 9
-        : walking
-          ? -Math.abs(Math.sin(now / 90)) * 4
-          : Math.sin(now / 700) * 1.2;
+    if (e.phase !== before) setView({ phase: e.phase, text: e.text }); // 말풍선 문구가 바뀌는 순간만 재렌더
+
+    const walkingNow = e.phase === "go" || e.phase === "back";
+    // 몸 흔들림: 작업 중 = 타자(빠르고 잔잔), 대기 = 통통 튐, 걷기 = 걸음, 그 외 = 숨쉬기
+    const bobNow =
+      L.bucket === "working"
+        ? Math.sin(t / 70) * 1.6
+        : L.bucket === "needs_you"
+          ? -Math.abs(Math.sin(t / 180)) * 9
+          : walkingNow
+            ? -Math.abs(Math.sin(t / 90)) * 4
+            : Math.sin(t / 700) * 1.2;
+    if (bodyRef.current) bodyRef.current.y = bobNow;
+    if (bubbleRef.current) {
+      bubbleRef.current.y = BUBBLE_Y + bobNow;
+      bubbleRef.current.alpha = L.bucket === "needs_you" ? 0.65 + 0.35 * Math.abs(Math.sin(t / 300)) : 1;
+    }
+    const p = e.pos ?? L.basePos;
+    if (rootRef.current && (rootRef.current.x !== p.x || rootRef.current.y !== p.y)) {
+      rootRef.current.x = p.x;
+      rootRef.current.y = p.y;
+      rootRef.current.zIndex = p.y;
+    }
+    // 정면 행: 걷기 0-1-2-1, 작업 중 타자 5-6, 대기 4(손들기), 그 외 0
+    const frames = L.frames;
+    if (frames && spriteRef.current) {
+      const col = walkingNow
+        ? [0, 1, 2, 1][Math.floor(t / 140) % 4]
+        : L.bucket === "working"
+          ? 5 + (Math.floor(t / 260) % 2)
+          : L.bucket === "needs_you"
+            ? 4
+            : 0;
+      if (spriteRef.current.texture !== frames[col]) spriteRef.current.texture = frames[col];
+    }
+  }, []);
+  useTick(tick);
+
+  const walking = view.phase === "go" || view.phase === "back";
+  const pos = basePos; // 걷는 동안의 위치는 tick 에서 직접 옮긴다
   // 말풍선 문구
   const bubble =
-    e.phase === "stay"
-      ? e.text
+    view.phase === "stay"
+      ? view.text
       : isNeedsYou
         ? "🙋 답 기다려요"
         : peer.bucket === "working"
@@ -296,9 +343,8 @@ function CommandCenterPeerComponent({
             : walking
               ? ""
               : "😌 휴식 중";
-  const bubbleAlpha = isNeedsYou ? 0.65 + 0.35 * Math.abs(Math.sin(now / 300)) : 1;
   const lines = bubble ? wrap3(bubble) : [];
-  const maxLen = lines.reduce((m, l) => Math.max(m, l.length), 0);
+  const maxLen = lines.reduce((m, l) => Math.max(m, Array.from(l).length), 0);
   const bubbleW = Math.max(90, maxLen * 26 + 36); // 2x 단위(0.5 배율 컨테이너)
   const bubbleH = lines.length * 32 + 22;
   const drawSpeech = useCallback(
@@ -330,11 +376,18 @@ function CommandCenterPeerComponent({
   // 세션마다 고정된 생김새(로컬 커스텀)
   const look = lookFor(peer.sessionId);
   const sheet = sheetFor(peer.sessionId);
-  const [paTex, setPaTex] = useState<Texture[] | null>(() => paFrames.get(sheet) ?? null);
+  const [paState, setPaState] = useState<{ sheet: number; frames: Texture[] } | null>(() => {
+    const f = paFrames.get(sheet);
+    return f ? { sheet, frames: f } : null;
+  });
+  const paTex = paState && paState.sheet === sheet ? paState.frames : null;
+  useLayoutEffect(() => {
+    live.current.frames = paTex;
+  }, [paTex]);
   useEffect(() => {
     if (paTex) return;
     let alive = true;
-    loadPaFrames(sheet).then((f) => alive && setPaTex(f)).catch(() => {});
+    loadPaFrames(sheet).then((f) => alive && setPaState({ sheet, frames: f })).catch(() => {});
     return () => { alive = false; };
   }, [sheet, paTex]);
   const drawBody = useCallback(
@@ -398,18 +451,11 @@ function CommandCenterPeerComponent({
     [onActivate, peer],
   );
 
-  // 정면 행: 걷기 0-1-2-1, 작업 중 타자 5-6, 대기 4(손들기), 그 외 0
-  const paCol = walking
-    ? [0, 1, 2, 1][Math.floor(now / 140) % 4]
-    : peer.bucket === "working"
-      ? 5 + (Math.floor(now / 260) % 2)
-      : isNeedsYou
-        ? 4
-        : 0;
-  const paTexture = paTex ? paTex[paCol] : null;
+  const paTexture = paTex ? paTex[0] : null; // 실제 프레임은 tick 에서 바꾼다
 
   return (
     <pixiContainer
+      ref={rootRef}
       x={pos.x}
       y={pos.y}
       zIndex={pos.y}
@@ -422,22 +468,22 @@ function CommandCenterPeerComponent({
 
       {/* 말풍선(작업 내용 · 대기 · 심부름) — 레트로 도트 박스, 최대 3줄 */}
       {lines.length > 0 && (
-        <pixiContainer y={NAMEPLATE_Y - 22 + bob} scale={0.8} alpha={bubbleAlpha}>
+        <pixiContainer ref={bubbleRef} y={BUBBLE_Y} scale={0.8}>
           <pixiGraphics draw={drawSpeech} />
           <pixiText
             key={fontReady ? "f1" : "f0"}
             text={lines.join("\n")}
-            anchor={{ x: 0.5, y: 1 }}
+            anchor={BUBBLE_ANCHOR}
             y={-14}
             resolution={2}
-            style={{ fontFamily: "Galmuri11, Galmuri9, Apple SD Gothic Neo, sans-serif", fontSize: 26, lineHeight: 32, fill: 0x1a1c2c, align: "center" }}
+            style={BUBBLE_STYLE}
           />
         </pixiContainer>
       )}
 
-      <pixiContainer y={bob}>
+      <pixiContainer ref={bodyRef}>
         {paTexture ? (
-          <pixiSprite texture={paTexture} anchor={{ x: 0.5, y: 1 }} y={6} scale={3.6} roundPixels />
+          <pixiSprite ref={spriteRef} texture={paTexture} anchor={SPRITE_ANCHOR} y={6} scale={3.6} roundPixels />
         ) : (
           <pixiGraphics draw={drawBody} />
         )}
@@ -450,12 +496,7 @@ function CommandCenterPeerComponent({
           text={shortLabel}
           anchor={0.5}
           resolution={2}
-          style={{
-            fontFamily: "monospace",
-            fontSize: 20,
-            fill: 0xffffff,
-            fontWeight: "bold",
-          }}
+          style={NAME_STYLE}
         />
       </pixiContainer>
 

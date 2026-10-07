@@ -1,7 +1,7 @@
 "use client";
 
 // (로컬 커스텀) 캐릭터 추가 모달 — 이름·메모·처음 놓을 칸을 직접 입력
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ZONE_BY_KEY, ZONE_ORDER, type ZoneKey } from "./layout";
 import { manualApi } from "./manualApi";
@@ -17,16 +17,17 @@ export function ManualTaskModal({ open, onClose }: { open: boolean; onClose: () 
   const [error, setError] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useLayoutEffect(() => {
+    closeRef.current = onClose;
+  });
 
-  // 열릴 때 한 번만 초기화(부모가 다시 그려져도 입력값 유지)
+  // 입력값 초기화는 부모가 열 때마다 새로 마운트(key)해서 처리한다 — 여기선 포커스·Esc 만
   useEffect(() => {
     if (!open) return;
-    setName(""); setNote(""); setBucket("working"); setError("");
-    setTimeout(() => nameRef.current?.focus(), 30);
+    const timer = setTimeout(() => nameRef.current?.focus(), 30);
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => { clearTimeout(timer); window.removeEventListener("keydown", onKey); };
   }, [open]);
 
   if (!open || typeof document === "undefined") return null;

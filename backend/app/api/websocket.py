@@ -56,13 +56,22 @@ def validate_websocket_origin(websocket: WebSocket) -> bool:
     local processes from subscribing to the session-state stream when
     no explicit key is configured.
     """
+    from app.api.middleware import LAN_COOKIE, host_header_ok, is_lan_host, lan_token_ok
+
+    if not host_header_ok(websocket.headers.get("host")):
+        return False
+    # (로컬 커스텀) 웹소켓은 HTTP 미들웨어(IP 검사)를 거치지 않으므로 여기서 접속 IP를 직접 본다.
+    client = getattr(websocket, "client", None)
+    client_host = client.host if client else None
+    is_remote = client_host is not None and client_host not in (*_LOCALHOST_HOSTS, "testclient")
+    if is_remote:
+        # LAN 손님: 사설망 + 토큰 쿠키가 있어야 한다(Origin 은 위조 가능하므로 근거로 쓰지 않음)
+        cookies = getattr(websocket, "cookies", {}) or {}
+        return is_lan_host(client_host) and lan_token_ok(cookies.get(LAN_COOKIE))
+
     origin = websocket.headers.get("origin")
     if origin is not None:
-        if origin.rstrip("/") in _allowed_ws_origins():
-            return True
-        from app.api.middleware import is_lan_host  # (로컬 커스텀) 사설망 허용
-
-        return is_lan_host(urlparse(origin).hostname)
+        return origin.rstrip("/") in _allowed_ws_origins()
 
     # Non-browser clients (no Origin) — always require the effective API key
     from app.config import get_settings

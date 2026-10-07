@@ -9,6 +9,9 @@ inline version in ``main.py``.
 """
 
 import hmac
+import ipaddress as _ip  # (로컬 커스텀) LAN 모드
+import os as _os
+from urllib.parse import urlparse as _urlparse
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -23,14 +26,19 @@ settings = get_settings()
 
 _LOCALHOST_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
-# (로컬 커스텀) 집 와이파이 같은 사설망에서 휴대폰·다른 맥으로 보기 — CLAUDE_OFFICE_ALLOW_LAN=1 일 때만
-import ipaddress as _ip
-import os as _os
-
+# (로컬 커스텀) 집 와이파이 등 사설망에서 휴대폰·다른 맥으로 보기.
+# CLAUDE_OFFICE_ALLOW_LAN=1 일 때만 켜진다. 사설 IP만으로는 믿지 않는다
+# (카페·호텔 와이파이도 사설망) — LAN 손님은 토큰이 있어야 한다.
+# 처음 한 번 ?token=<CLAUDE_OFFICE_LAN_TOKEN> 으로 열면 쿠키(co_lan)가 심기고,
+# 이후 요청·웹소켓은 그 쿠키로 통과한다.
+# 토큰이 설정돼 있지 않으면 LAN 손님은 전부 거절한다(안전한 기본값).
 ALLOW_LAN = _os.environ.get("CLAUDE_OFFICE_ALLOW_LAN", "") in ("1", "true", "yes")
+LAN_TOKEN = _os.environ.get("CLAUDE_OFFICE_LAN_TOKEN", "")
+LAN_COOKIE = "co_lan"
 
 
 def is_lan_host(host: str | None) -> bool:
+    """LAN 모드일 때 사설 IP(또는 *.local 이름)인가. 루프백은 False(따로 처리)."""
     if not ALLOW_LAN or not host:
         return False
     try:
@@ -40,25 +48,56 @@ def is_lan_host(host: str | None) -> bool:
     return a.is_private and not a.is_loopback
 
 
+def lan_token_ok(token: str | None) -> bool:
+    return bool(LAN_TOKEN) and bool(token) and hmac.compare_digest(token or "", LAN_TOKEN)
+
+
+def host_header_ok(host_header: str | None) -> bool:
+    """DNS rebinding 방지: Host 가 루프백이거나, LAN 모드의 사설 주소/.local 이어야 한다."""
+    if not host_header:
+        return True  # HTTP/1.0 등 Host 없는 로컬 도구
+    hostname = _urlparse("//" + host_header).hostname
+    # testserver/test: Starlette·httpx 테스트 클라이언트 기본 이름(공개 도메인이 될 수 없음)
+    if hostname in ("testserver", "test"):
+        return True
+    return hostname in _LOCALHOST_HOSTS or is_lan_host(hostname)
+
+
 class LocalhostOnlyMiddleware(BaseHTTPMiddleware):
     """Reject HTTP requests from non-localhost origins.
 
     This is a local-only development tool, not deployed to the public internet.
     All API endpoints (including subprocess execution and clipboard writes)
     are protected by restricting access to the loopback interface.
+    (로컬 커스텀) LAN 모드에선 사설망 손님도 받되 토큰 쿠키가 있어야 한다.
 
     ``"testclient"`` is the sentinel host used by Starlette's test transport
     and cannot appear on a real TCP connection, so it is safe to allow.
     """
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        if not host_header_ok(request.headers.get("host")):
+            return JSONResponse(status_code=403, content={"detail": "Access denied: bad Host"})
         client_host = request.client.host if request.client else None
-        if client_host not in _LOCALHOST_HOSTS and not is_lan_host(client_host):
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "Access denied: localhost only"},
-            )
-        return await call_next(request)
+        if client_host in _LOCALHOST_HOSTS:
+            return await call_next(request)
+        if is_lan_host(client_host):
+            query_token = request.query_params.get("token")
+            if lan_token_ok(request.cookies.get(LAN_COOKIE)):
+                return await call_next(request)
+            if lan_token_ok(query_token):
+                response = await call_next(request)
+                response.set_cookie(
+                    LAN_COOKIE,
+                    query_token or "",
+                    max_age=60 * 60 * 24 * 365,
+                    httponly=True,
+                    samesite="lax",
+                )
+                return response
+            msg = "토큰이 필요해요: 맥에서 office.sh lan url 로 나온 주소로 처음 한 번 여세요"
+            return JSONResponse(status_code=401, content={"detail": msg})
+        return JSONResponse(status_code=403, content={"detail": "Access denied: localhost only"})
 
 
 # Paths that do NOT require an API key (health checks, interactive docs).
