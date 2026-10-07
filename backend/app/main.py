@@ -16,7 +16,7 @@ from rich.logging import RichHandler
 from sqlalchemy import delete, select, update
 
 from app.api.middleware import ApiKeyMiddleware, LocalhostOnlyMiddleware
-from app.api.routes import events, floors, manual, preferences, sessions, websockets
+from app.api.routes import chat, events, floors, manual, preferences, sessions, websockets
 from app.config import get_settings
 from app.core.event_processor import EventProcessor, get_event_processor
 from app.core.summary_service import get_summary_service
@@ -83,6 +83,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     yield
 
+    await chat.shutdown_runs()  # (로컬 커스텀) 돌던 휴대폰 채팅 claude 정리
     # Cancel any pending debounced overview broadcast so shutdown is clean.
     await get_event_processor().shutdown()
     idle_evictor.cancel()
@@ -199,6 +200,7 @@ app.include_router(floors.router, prefix=f"{settings.API_V1_STR}")
 app.include_router(preferences.router, prefix=f"{settings.API_V1_STR}")
 app.include_router(sessions.router, prefix=f"{settings.API_V1_STR}")
 app.include_router(manual.router, prefix=f"{settings.API_V1_STR}")  # 로컬 커스텀: 직접 추가 캐릭터
+app.include_router(chat.router, prefix=f"{settings.API_V1_STR}")  # 로컬 커스텀: 휴대폰 채팅
 # WebSocket routes (no prefix). Registered before the SERVE_STATIC catch-all
 # ``@app.get("/{path:path}")`` block so WS handshakes aren't shadowed. Within
 # the router, ``/ws/overview`` is declared before ``/ws/{session_id}`` so the

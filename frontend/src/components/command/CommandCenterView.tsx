@@ -21,6 +21,12 @@ import { sessionMatchesFloor } from "./sessionMatchesFloor";
 import { ManualTaskModal } from "./ManualTaskModal";
 import { useManualStore } from "./manualApi";
 
+// (로컬 커스텀) 채팅은 localStorage 에서 대화를 되살리므로 클라이언트에서만 그린다
+const ChatPanel = dynamic(
+  () => import("./ChatPanel").then((m) => ({ default: m.ChatPanel })),
+  { ssr: false },
+);
+
 function CommandCenterLoading(): ReactNode {
   const { t } = useTranslation();
   return (
@@ -168,8 +174,8 @@ export function CommandCenterView({
           </span>
         </div>
 
-        {/* Canvas */}
-        <div className="flex-grow border border-slate-800 rounded-lg shadow-2xl bg-slate-900 overflow-hidden relative min-h-0">
+        {/* Canvas — (로컬 커스텀) 휴대폰에선 높이를 고정하고 아래를 채팅에 준다 */}
+        <div className="h-[42svh] shrink-0 md:h-auto md:shrink md:flex-grow border border-slate-800 rounded-lg shadow-2xl bg-slate-900 overflow-hidden relative min-h-0">
           <CommandCenterCanvas
             peers={peers}
             counts={counts}
@@ -178,6 +184,9 @@ export function CommandCenterView({
             onPeerActivate={handlePeerActivate}
           />
         </div>
+
+        {/* (로컬 커스텀) Claude 에게 말 걸기 */}
+        <ChatPanel sessions={sessions} />
       </div>
 
       {addOpen && <ManualTaskModal open onClose={() => setAddOpen(false)} />}
