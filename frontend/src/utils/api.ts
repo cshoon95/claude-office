@@ -37,6 +37,9 @@ export function initApiKeyFromBrowser(): void {
     } catch {
       // sessionStorage may be unavailable (private mode); key stays in-memory.
     }
+    // (로컬 커스텀) LAN(휴대폰)에선 주소에 토큰을 남긴다 — "홈 화면에 추가"가 이 주소를 저장하고,
+    // 홈 화면 앱(PWA)은 쿠키를 따로 쓰므로 처음 열 때 ?token= 이 있어야 들어온다.
+    if (!["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname)) return;
     params.delete("token");
     const qs = params.toString();
     window.history.replaceState(
