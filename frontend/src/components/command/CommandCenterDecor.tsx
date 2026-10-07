@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import type { OfficeTextures } from "@/hooks/useOfficeTextures";
 import { CANVAS_WIDTH } from "@/constants/canvas";
 import { EmployeeOfTheMonth } from "../game/EmployeeOfTheMonth";
+import { CityWindow } from "../game/CityWindow";
 import { EXIT_DOOR_X, TOP_WALL_H, FLOOR_DECOR_Y } from "./layout";
 
 interface CommandCenterDecorProps {
@@ -25,13 +26,17 @@ export function CommandCenterDecor({
       <pixiContainer x={50} y={50}>
         <EmployeeOfTheMonth />
       </pixiContainer>
-      {t.wallOutlet && (
+      {/* 로컬 커스텀: 창밖 도시 풍경 + 커피머신 (쉬는 세션이 들르는 곳) */}
+      <pixiContainer x={765} y={30}>
+        <CityWindow />
+      </pixiContainer>
+      {t.coffeeMachine && (
         <pixiSprite
-          texture={t.wallOutlet}
+          texture={t.coffeeMachine}
           anchor={0.5}
-          x={905}
-          y={TOP_WALL_H - 32}
-          scale={0.045}
+          x={1000}
+          y={TOP_WALL_H - 59}
+          scale={0.1}
         />
       )}
       {t.waterCooler && (

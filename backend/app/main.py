@@ -185,6 +185,15 @@ app.add_middleware(
 app.add_middleware(LocalhostOnlyMiddleware)
 app.add_middleware(ApiKeyMiddleware)
 
+
+@app.middleware("http")
+async def no_store_api(request, call_next):  # type: ignore[no-untyped-def]
+    """API 응답은 브라우저가 캐시하지 않게(세션 목록이 예전 빈 값으로 굳는 문제 방지)."""
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 app.include_router(events.router, prefix=f"{settings.API_V1_STR}")
 app.include_router(floors.router, prefix=f"{settings.API_V1_STR}")
 app.include_router(preferences.router, prefix=f"{settings.API_V1_STR}")

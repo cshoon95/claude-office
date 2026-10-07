@@ -1,11 +1,62 @@
 "use client";
 
-import { memo, useCallback, type ReactNode } from "react";
+import { memo, useCallback, useRef, useState, type ReactNode } from "react";
+import { useTick } from "@pixi/react";
 import { Graphics, Texture } from "pixi.js";
 import type { Position } from "@/types";
 import { useMotionStore, selectMotionPos } from "@/systems/commandCenterMotion";
-import { ZONE_BY_KEY } from "./layout";
+import { ZONE_BY_KEY, TOP_WALL_H, EXIT_DOOR_X } from "./layout";
 import type { CommandPeer } from "./useCommandCenterPeers";
+
+// ── 놀거리(로컬 커스텀): 쉬는 세션이 가끔 다녀오는 곳 ──
+const WALK_Y = TOP_WALL_H + 34; // 벽 앞 통로
+const ERRANDS: Array<{ x: number; text: string }> = [
+  { x: EXIT_DOOR_X + 120, text: "💧 물 한 잔" },
+  { x: 1000, text: "☕ 커피 내리는 중" },
+  { x: 850, text: "🌇 창밖 구경" },
+  { x: 420, text: "📝 투두 확인" },
+  { x: 690, text: "⏰ 몇 시지…" },
+];
+const ERRAND_SPEED = 110; // px/s
+const DWELL_MS = 3500;
+
+type ErrandPhase = "idle" | "go" | "stay" | "back";
+interface Errand {
+  phase: ErrandPhase;
+  nextAt: number; // idle → go 시작 시각
+  waypoints: Position[]; // go 경로 (back은 역순)
+  i: number;
+  pos: Position | null;
+  stayUntil: number;
+  text: string;
+}
+
+function walkAlong(e: Errand, dt: number): boolean {
+  let remaining = ERRAND_SPEED * dt;
+  let pos = e.pos!;
+  while (remaining > 0 && e.i < e.waypoints.length - 1) {
+    const next = e.waypoints[e.i + 1];
+    const dx = next.x - pos.x;
+    const dy = next.y - pos.y;
+    const seg = Math.hypot(dx, dy);
+    if (remaining >= seg) {
+      remaining -= seg;
+      pos = { ...next };
+      e.i++;
+    } else {
+      pos = { x: pos.x + (dx / seg) * remaining, y: pos.y + (dy / seg) * remaining };
+      remaining = 0;
+    }
+  }
+  e.pos = pos;
+  return e.i >= e.waypoints.length - 1;
+}
+
+function shortTask(s: string | null): string {
+  if (!s) return "💻 작업 중";
+  const t = s.replace(/\s+/g, " ").trim();
+  return `💻 ${t.length > 18 ? t.slice(0, 17) + "…" : t}`;
+}
 
 // Body geometry (compact relative to the office BossSprite).
 const BODY_W = 40;
@@ -39,8 +90,83 @@ function CommandCenterPeerComponent({
   const isNeedsYou = peer.bucket === "needs_you";
   // Walked position from the motion mover; exit animation overrides it.
   const motionPos = useMotionStore(selectMotionPos(peer.sessionId));
-  const pos = positionOverride ?? motionPos ?? peer.position;
+  const basePos = positionOverride ?? motionPos ?? peer.position;
   const alpha = alphaOverride ?? 1;
+
+  // ── 살아 있는 느낌: 프레임마다 시간 진행 + 쉬는 세션의 심부름 ──
+  const [now, setNow] = useState(0);
+  const errand = useRef<Errand>({
+    phase: "idle",
+    nextAt: performance.now() + 4000 + Math.random() * 12000,
+    waypoints: [],
+    i: 0,
+    pos: null,
+    stayUntil: 0,
+    text: "",
+  });
+  const canWander = peer.bucket === "done" && !positionOverride;
+  useTick((ticker) => {
+    const t = performance.now();
+    const dt = Math.min(ticker.deltaMS / 1000, 0.05);
+    const e = errand.current;
+    if (!canWander) {
+      if (e.phase !== "idle") Object.assign(e, { phase: "idle", pos: null });
+    } else if (e.phase === "idle" && t > e.nextAt) {
+      const pick = ERRANDS[Math.floor(Math.random() * ERRANDS.length)];
+      const home = basePos;
+      e.waypoints = [{ ...home }, { x: home.x, y: WALK_Y }, { x: pick.x, y: WALK_Y }];
+      Object.assign(e, { phase: "go", i: 0, pos: { ...home }, text: pick.text });
+    } else if (e.phase === "go" && walkAlong(e, dt)) {
+      Object.assign(e, { phase: "stay", stayUntil: t + DWELL_MS });
+    } else if (e.phase === "stay" && t > e.stayUntil) {
+      e.waypoints = [...e.waypoints].reverse();
+      e.waypoints[e.waypoints.length - 1] = { ...basePos };
+      Object.assign(e, { phase: "back", i: 0 });
+    } else if (e.phase === "back" && walkAlong(e, dt)) {
+      Object.assign(e, { phase: "idle", pos: null, nextAt: t + 10000 + Math.random() * 20000 });
+    }
+    setNow(t);
+  });
+  const e = errand.current;
+  const walking = e.phase === "go" || e.phase === "back";
+  const pos = e.pos ?? basePos;
+  // 몸 흔들림: 작업 중 = 타자(빠르고 잔잔), 대기 = 통통 튐, 걷기 = 걸음, 그 외 = 숨쉬기
+  const bob =
+    peer.bucket === "working"
+      ? Math.sin(now / 70) * 1.6
+      : isNeedsYou
+        ? -Math.abs(Math.sin(now / 180)) * 9
+        : walking
+          ? -Math.abs(Math.sin(now / 90)) * 4
+          : Math.sin(now / 700) * 1.2;
+  // 말풍선 문구
+  const bubble =
+    e.phase === "stay"
+      ? e.text
+      : isNeedsYou
+        ? "🙋 답 기다려요"
+        : peer.bucket === "working"
+          ? shortTask(peer.currentTask)
+          : peer.bucket === "ended"
+            ? "💤"
+            : walking
+              ? ""
+              : "😌 휴식 중";
+  const bubbleAlpha = isNeedsYou ? 0.65 + 0.35 * Math.abs(Math.sin(now / 300)) : 1;
+  const bubbleW = Math.max(64, bubble.length * 21 + 34); // 2x 단위(0.5 배율 컨테이너)
+  const drawSpeech = useCallback(
+    (g: Graphics) => {
+      g.clear();
+      g.roundRect(-bubbleW / 2, -24, bubbleW, 44, 14);
+      g.fill({ color: isNeedsYou ? 0xfbbf24 : 0xffffff, alpha: 0.96 });
+      g.moveTo(-10, 20);
+      g.lineTo(10, 20);
+      g.lineTo(0, 34);
+      g.closePath();
+      g.fill({ color: isNeedsYou ? 0xfbbf24 : 0xffffff, alpha: 0.96 });
+    },
+    [bubbleW, isNeedsYou],
+  );
 
   const drawShadow = useCallback(
     (g: Graphics) => {
@@ -132,7 +258,20 @@ function CommandCenterPeerComponent({
     >
       <pixiGraphics draw={drawShadow} />
 
-      <pixiContainer>
+      {/* 말풍선(작업 내용 · 대기 · 심부름) */}
+      {bubble && (
+        <pixiContainer y={NAMEPLATE_Y - 34 + bob} scale={0.5} alpha={bubbleAlpha}>
+          <pixiGraphics draw={drawSpeech} />
+          <pixiText
+            text={bubble}
+            anchor={0.5}
+            resolution={2}
+            style={{ fontFamily: "sans-serif", fontSize: 22, fill: 0x111827, fontWeight: "bold" }}
+          />
+        </pixiContainer>
+      )}
+
+      <pixiContainer y={bob}>
         <pixiGraphics draw={drawBody} />
 
         {/* Sunglasses */}
