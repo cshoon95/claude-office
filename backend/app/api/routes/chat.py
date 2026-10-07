@@ -126,11 +126,10 @@ def _claude_bin() -> str | None:
 
 
 def _child_env(bin_path: str) -> dict[str, str]:
-    """비밀값(LAN 토큰·API 키)은 빼고, claude(node 스크립트) 옆 폴더를 PATH 맨 앞에."""
+    """LAN 토큰은 빼고, claude(node 스크립트) 옆 폴더를 PATH 맨 앞에.
+    CLAUDE_OFFICE_API_KEY 는 남긴다 — 헤드리스 claude 의 훅이 사무실로 이벤트를 보낼 때 쓴다."""
     env = dict(os.environ)
-    for k in list(env):
-        if k.startswith("CLAUDE_OFFICE_") and any(s in k for s in ("TOKEN", "KEY", "SECRET")):
-            env.pop(k)
+    env.pop("CLAUDE_OFFICE_LAN_TOKEN", None)
     # 서버가 Claude Code 안에서 켜졌으면 중첩 실행으로 막힐 수 있다
     env.pop("CLAUDECODE", None)
     env.pop("CLAUDE_CODE_ENTRYPOINT", None)
@@ -142,6 +141,33 @@ def _child_env(bin_path: str) -> dict[str, str]:
     bin_dir = str(Path(bin_path).parent)
     env["PATH"] = os.pathsep.join([bin_dir, *[p for p in parts if p != bin_dir]])
     return env
+
+
+def _transcript_cwd(session_id: str) -> str | None:
+    """~/.claude/projects/*/<세션>.jsonl 에서 처음 나오는 cwd. --resume 은 그 폴더에서 해야 한다."""
+    base = Path(os.environ.get("CLAUDE_OFFICE_CLAUDE_PROJECTS") or Path.home() / ".claude/projects")
+    files = sorted(
+        glob.glob(str(base / "*" / f"{session_id}.jsonl")),
+        key=lambda f: os.path.getmtime(f),
+        reverse=True,
+    )
+    for f in files:
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                for i, line in enumerate(fh):
+                    if i >= 2000:
+                        break
+                    if '"cwd"' not in line:
+                        continue
+                    try:
+                        cwd = _obj(json.loads(line)).get("cwd")
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(cwd, str) and cwd:
+                        return cwd
+        except OSError:
+            continue
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -402,18 +428,14 @@ async def create_run(
         rec = await db.get(SessionRecord, resume)
         if rec is None:
             raise HTTPException(status_code=404, detail="그 세션을 찾지 못했어요")
-        root = Path(rec.project_root or "").expanduser()
+        # project_root 는 git 루트(또는 없음)라 실제 작업 폴더와 다를 수 있다 — 대화 기록의 cwd 우선
+        real = _transcript_cwd(resume) or rec.project_root
         try:
-            resolved = root.resolve()
+            resolved = Path(real).expanduser().resolve() if real else None
         except OSError:
             resolved = None
         home = Path.home().resolve()
-        if (
-            not rec.project_root
-            or resolved is None
-            or not resolved.is_dir()
-            or not resolved.is_relative_to(home)
-        ):
+        if resolved is None or not resolved.is_dir() or not resolved.is_relative_to(home):
             raise HTTPException(status_code=400, detail="세션 폴더가 없거나 홈 폴더 밖이에요")
         cwd, key = str(resolved), f"session:{resume}"
         busy = any(r.key == key or r.session_id == resume for r in _running())

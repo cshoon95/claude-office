@@ -26,6 +26,7 @@ import json, os, sys
 open(os.environ["FAKE_ARGS_OUT"], "w").write(json.dumps({
     "argv": sys.argv[1:], "cwd": os.getcwd(), "stdin": sys.stdin.read(),
     "has_token": "CLAUDE_OFFICE_LAN_TOKEN" in os.environ,
+    "api_key": os.environ.get("CLAUDE_OFFICE_API_KEY"),
 }))
 lines = [
     {"type": "system", "subtype": "init", "session_id": "11111111-2222-3333-4444-555555555555"},
@@ -72,6 +73,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("CLAUDE_OFFICE_CLAUDE_BIN", _script(tmp_path, FAKE_OK))
     monkeypatch.setenv("FAKE_ARGS_OUT", str(tmp_path / "args.json"))
     monkeypatch.setenv("CLAUDE_OFFICE_LAN_TOKEN", "secret")
+    monkeypatch.setenv("CLAUDE_OFFICE_API_KEY", "hook-key")
     chat._runs.clear()  # pyright: ignore[reportPrivateUsage]
     return home
 
@@ -163,6 +165,7 @@ async def test_happy_path_new_folder(env: Path, tmp_path: Path, client: httpx.As
     assert "bypassPermissions" in args["argv"] and "--resume" not in args["argv"]
     assert Path(args["cwd"]).resolve() == cwd.resolve()
     assert args["has_token"] is False
+    assert args["api_key"] == "hook-key"  # 훅이 써야 하므로 남긴다
 
     # after= 로 이어 받기
     r = await client.get(f"/api/v1/chat/runs/{run_id}", params={"after": 3}, headers=H)
@@ -278,3 +281,50 @@ def test_event_caps() -> None:
         big.add("text", "x" * 20000, chat.TEXT_MAX)
     assert big.n_bytes <= chat.MAX_BYTES
     assert [e["text"] for e in big.events].count(chat.OMITTED) == 1
+
+
+def _transcript(home: Path, sid: str, cwd: Path) -> None:
+    d = home / ".claude" / "projects" / "-some-project"
+    d.mkdir(parents=True, exist_ok=True)
+    lines = [
+        {"type": "summary", "summary": "x"},
+        {"type": "user", "cwd": str(cwd), "sessionId": sid},
+    ]
+    (d / f"{sid}.jsonl").write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+
+
+async def _resume_cwd(client: httpx.AsyncClient, tmp_path: Path, sid: str) -> Path:
+    r = await client.post(
+        "/api/v1/chat/runs", json={"prompt": "계속", "resume_session_id": sid}, headers=H
+    )
+    assert r.status_code == 200, r.text
+    assert (await _wait(client, r.json()["run_id"]))["status"] == "done"
+    return Path(json.loads((tmp_path / "args.json").read_text())["cwd"]).resolve()
+
+
+async def test_resume_non_git_folder_uses_transcript_cwd(
+    env: Path, tmp_path: Path, client: httpx.AsyncClient
+) -> None:
+    # git 이 아닌 폴더에서 시작한 세션: project_root 가 없다
+    sid = str(uuid.uuid4())
+    folder = env / "projects" / "alpha"
+    _transcript(env, sid, folder)
+    async for db in get_db():
+        db.add(SessionRecord(id=sid, project_root=None))
+        await db.commit()
+    assert await _resume_cwd(client, tmp_path, sid) == folder.resolve()
+
+
+async def test_resume_subfolder_session(
+    env: Path, tmp_path: Path, client: httpx.AsyncClient
+) -> None:
+    # 하위 폴더에서 연 세션: project_root(git 루트)가 아니라 그 하위 폴더에서 이어야 한다
+    sid = str(uuid.uuid4())
+    root = env / "src" / "beta"
+    sub = root / "pkg" / "inner"
+    sub.mkdir(parents=True)
+    _transcript(env, sid, sub)
+    async for db in get_db():
+        db.add(SessionRecord(id=sid, project_root=str(root)))
+        await db.commit()
+    assert await _resume_cwd(client, tmp_path, sid) == sub.resolve()
