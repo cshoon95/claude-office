@@ -85,73 +85,76 @@ function shade(c: number, k: number): number {
   return (Math.min(255, r) << 16) | (Math.min(255, g) << 8) | Math.min(255, b);
 }
 
-// 기본 몸(앞모습). o 외곽선 · h 머리 · s 피부 · S 피부그늘 · e 눈 · m 입 · c 셔츠 · C 셔츠그늘 · w 칼라 · k 벨트 · p 바지 · b 신발
-const BASE = [
-  "....oooooo....",
-  "...ohhhhhho...",
-  "..ohhhhhhhho..",
-  "..ohhhhhhhho..",
-  "..ohhssssshho.",
-  "..osesssseso..",
-  "..ossssssssо..".replace("о", "o"),
-  "..osssmmssso..",
-  "...oSSSSSSo...",
-  "....oCwwCo....",
-  ".occcccccccco.",
-  ".occcccccccco.",
-  "oscccccccccCso",
-  ".oCCCCCCCCCCo.",
-  "..okkkkkkkko..",
-  "..oppppppppo..",
-  "..opppoopppo..",
-  "..opppoopppo..",
-  "..obbboobbbo..",
-  "..oooo..oooo..",
-].map((r) => r.padEnd(14, ".").slice(0, 14).split(""));
-
-function spriteFor(L: Look, frame: number): { grid: string[][]; extra: Array<[number, number, string]> } {
-  const g = BASE.map((r) => r.slice());
-  const extra: Array<[number, number, string]> = []; // 머리 위(음수 행) 도트
-  const set = (r: number, c: number, v: string) => { if (r >= 0 && r < g.length && c >= 0 && c < 14) g[r][c] = v; else extra.push([r, c, v]); };
-  // 머리 모양
-  if (L.style === "bald") { for (let c = 3; c <= 10; c++) for (const r of [1, 2, 3]) if (g[r][c] === "h") set(r, c, r === 1 ? "h" : "s"); set(4, 3, "s"); set(4, 4, "s"); set(4, 9, "s"); set(4, 10, "s"); }
-  if (L.style === "long") { for (let r = 4; r <= 10; r++) { set(r, 2, "h"); set(r, 11, "h"); set(r, 1, "o"); set(r, 12, "o"); } }
-  if (L.style === "side") { for (let r = 4; r <= 6; r++) set(r, 3, "h"); set(3, 4, "h"); }
-  if (L.style === "spiky") { set(-1, 4, "o"); set(-1, 6, "o"); set(-1, 8, "o"); set(0, 4, "h"); set(0, 6, "h"); set(0, 8, "h"); set(-2, 4, "o"); set(-2, 6, "o"); set(-2, 8, "o"); }
-  if (L.style === "bun") { for (let c = 5; c <= 8; c++) { set(-1, c, "h"); set(-2, c, "o"); } set(-1, 4, "o"); set(-1, 9, "o"); }
-  // 소품
-  if (L.accessory === "cap") { for (let r = 0; r <= 3; r++) for (let c = 2; c <= 11; c++) if ("hs".includes(g[r][c])) set(r, c, "c"); for (let c = 3; c <= 13; c++) set(4, c, c >= 11 ? "C" : g[4][c] === "o" ? "o" : "C"); }
-  if (L.accessory === "beanie") { for (let r = 0; r <= 3; r++) for (let c = 2; c <= 11; c++) if ("hs".includes(g[r][c])) set(r, c, r === 3 ? "w" : "R"); set(-1, 6, "w"); set(-1, 7, "w"); }
-  if (L.accessory === "crown") { for (const c of [4, 6, 7, 9]) set(-1, c, "Y"); for (let c = 4; c <= 9; c++) set(0, c, "Y"); }
-  if (L.accessory === "glasses") { set(5, 3, "o"); set(5, 5, "o"); set(5, 8, "o"); set(5, 10, "o"); set(5, 6, "o"); set(5, 7, "o"); }
-  if (L.accessory === "sunglasses") { for (let c = 3; c <= 10; c++) set(5, c, "K"); }
-  if (L.accessory === "bow") { set(1, 10, "P"); set(1, 12, "P"); set(0, 11, "P"); set(2, 11, "P"); set(1, 11, "Q"); }
-  if (L.accessory === "headphones") { for (let r = 3; r <= 6; r++) { set(r, 1, "K"); set(r, 12, "K"); } for (let c = 3; c <= 10; c++) set(-1, c, "K"); set(0, 2, "K"); set(0, 11, "K"); }
-  if (L.tie) { set(10, 6, "k"); set(10, 7, "k"); set(11, 6, "k"); set(11, 7, "k"); set(12, 6, "k"); }
-  if (L.cheeks) { set(6, 3, "r"); set(6, 10, "r"); }
-  // 걷기·타자 프레임: 다리/손을 번갈아
-  if (frame === 1) { g[18][3] = "o"; g[18][4] = "b"; g[19][3] = "."; g[19][4] = "o"; g[12][1] = "c"; g[11][1] = "s"; }
-  if (frame === 2) { g[18][9] = "o"; g[18][10] = "b"; g[19][10] = "."; g[19][9] = "o"; g[12][12] = "c"; g[11][12] = "s"; }
-  return { grid: g, extra };
+// ── 3D 복셀 캐릭터(크로시 로드 느낌): 상자마다 앞면 + 밝은 윗면 + 어두운 옆면 ──
+const DEPTH = 7; // 윗면/옆면이 보이는 깊이(오른쪽 위 방향)
+function lighten(c: number, k: number): number {
+  const f = (v: number) => Math.min(255, Math.round(v + (255 - v) * k));
+  return (f((c >> 16) & 255) << 16) | (f((c >> 8) & 255) << 8) | f(c & 255);
+}
+function box(g: Graphics, x: number, y: number, w: number, h: number, c: number, d = DEPTH): void {
+  // 윗면
+  g.poly([x, y, x + d, y - d, x + w + d, y - d, x + w, y]); g.fill({ color: lighten(c, 0.28) });
+  // 옆면(오른쪽)
+  g.poly([x + w, y, x + w + d, y - d, x + w + d, y + h - d, x + w, y + h]); g.fill({ color: shade(c, 0.68) });
+  // 앞면 + 아래쪽 살짝 그늘
+  g.rect(x, y, w, h); g.fill({ color: c });
+  g.rect(x, y + h - 2, w, 2); g.fill({ color: shade(c, 0.85) });
+  // 외곽선(얇게)
+  g.poly([x, y, x + d, y - d, x + w + d, y - d, x + w + d, y + h - d, x + w, y + h, x, y + h]);
+  g.stroke({ color: 0x15161c, width: 1, alpha: 0.55 });
 }
 
 function drawCharacter(g: Graphics, L: Look, accent: number, loud: boolean, frame = 0): void {
-  const OUT = 0x1a1c2c;
-  const pal: Record<string, number> = {
-    o: OUT, h: L.hair, s: L.skin, S: shade(L.skin, 0.82), e: OUT, m: 0x7e2553,
-    c: L.shirt, C: shade(L.shirt, 0.72), w: 0xfff1e8, k: 0x2b2b3a, p: 0x3b4a7a, b: 0x2a1d1d,
-    R: 0xd62f3a, Y: 0xffd23f, K: 0x111111, P: 0xff77a8, Q: 0xd6336c, r: 0xff8fa3,
-  };
-  const { grid, extra } = spriteFor(L, frame);
-  const x0 = -7 * PX, y0 = -20 * PX;
-  // 상태 테두리(발밑 그림자는 drawShadow에서): 작업 상태색으로 1도트 바깥 후광
-  for (let r = 0; r < grid.length; r++) for (let c = 0; c < 14; c++) {
-    const v = grid[r][c];
-    if (v === ".") continue;
-    g.rect(x0 + c * PX, y0 + r * PX, PX, PX); g.fill({ color: pal[v] ?? OUT });
+  const ox = -DEPTH / 2; // 깊이만큼 왼쪽으로 당겨 가운데 맞춤
+  const pants = 0x3b4a7a, shoe = 0x2a2230, ink = 0x15161c;
+  const legA = frame === 1 ? -3 : 0, legB = frame === 2 ? -3 : 0;  // 걸음
+  const armA = frame === 1 ? -3 : 0, armB = frame === 2 ? -3 : 0;  // 타자
+  // 다리(뒤 → 앞 순서로)
+  box(g, ox - 10, -13 + legA, 9, 13 - legA, pants, 5);
+  box(g, ox + 1, -13 + legB, 9, 13 - legB, pants, 5);
+  box(g, ox - 10, -4 + legA, 9, 4, shoe, 5);
+  box(g, ox + 1, -4 + legB, 9, 4, shoe, 5);
+  // 긴 머리(뒤쪽)
+  if (L.style === "long") { box(g, ox - 14, -54, 28, 26, L.hair, 6); }
+  // 몸통
+  box(g, ox - 12, -33, 24, 21, L.shirt);
+  g.poly([ox - 5, -33, ox + 5, -33, ox, -27]); g.fill({ color: 0xfff1e8 }); // 칼라
+  if (L.tie) { g.poly([ox, -29, ox - 2.5, -26, ox, -16, ox + 2.5, -26]); g.fill({ color: ink }); }
+  else { g.rect(ox - 8, -24, 16, 2); g.fill({ color: lighten(L.shirt, 0.35) }); }
+  // 팔 + 손
+  box(g, ox - 18, -32 + armA, 6, 15, L.shirt, 5); box(g, ox - 18, -18 + armA, 6, 5, L.skin, 5);
+  box(g, ox + 12, -32 + armB, 6, 15, L.shirt, 5); box(g, ox + 12, -18 + armB, 6, 5, L.skin, 5);
+  // 머리(큰 정육면체)
+  box(g, ox - 12, -57, 24, 22, L.skin, 9);
+  // 머리카락
+  switch (L.style) {
+    case "short": case "long": box(g, ox - 13, -62, 26, 8, L.hair, 9); box(g, ox - 13, -55, 4, 6, L.hair, 3); break;
+    case "side": box(g, ox - 13, -62, 26, 8, L.hair, 9); box(g, ox - 13, -55, 11, 5, L.hair, 3); break;
+    case "spiky": box(g, ox - 13, -61, 26, 6, L.hair, 9); for (const dx of [-11, -4, 3]) box(g, ox + dx, -67, 6, 6, L.hair, 6); break;
+    case "bun": box(g, ox - 13, -61, 26, 7, L.hair, 9); box(g, ox - 5, -71, 10, 9, L.hair, 7); break;
+    case "bald": break;
   }
-  for (const [r, c, v] of extra) { g.rect(x0 + c * PX, y0 + r * PX, PX, PX); g.fill({ color: pal[v] ?? OUT }); }
-  if (loud) { g.rect(x0 - PX, y0 - PX * 3, PX * 16, PX * 24); g.stroke({ color: accent, width: 2, alpha: 0.9 }); }
+  // 얼굴(앞면에)
+  const fy = -47;
+  if (L.accessory === "sunglasses") { g.rect(ox - 10, fy - 2, 20, 6); g.fill({ color: ink }); g.rect(ox - 8, fy - 1, 5, 2); g.fill({ color: 0x5f6b7a }); }
+  else {
+    g.rect(ox - 7, fy - 1, 3, 5); g.rect(ox + 4, fy - 1, 3, 5); g.fill({ color: ink });
+    g.rect(ox - 6, fy - 1, 1, 1); g.rect(ox + 5, fy - 1, 1, 1); g.fill({ color: 0xffffff });
+  }
+  g.rect(ox - 3, fy + 7, 6, 2); g.fill({ color: 0x8a3b3b });
+  if (L.cheeks) { g.rect(ox - 10, fy + 5, 4, 2); g.rect(ox + 6, fy + 5, 4, 2); g.fill({ color: 0xff8fa3, alpha: 0.75 }); }
+  // 소품
+  switch (L.accessory) {
+    case "cap": box(g, ox - 13, -64, 26, 9, L.shirt, 9); box(g, ox - 4, -57, 18, 3, shade(L.shirt, 0.85), 4); break;
+    case "beanie": box(g, ox - 13, -66, 26, 12, 0xd62f3a, 9); box(g, ox - 13, -57, 26, 3, 0xfff1e8, 9); box(g, ox - 3, -72, 6, 5, 0xfff1e8, 5); break;
+    case "crown": box(g, ox - 10, -66, 20, 5, 0xffd23f, 7); for (const dx of [-10, -2, 6]) box(g, ox + dx, -71, 4, 5, 0xffd23f, 4); break;
+    case "glasses": g.rect(ox - 9, fy - 3, 7, 8); g.rect(ox + 2, fy - 3, 7, 8); g.stroke({ color: ink, width: 1.5 }); g.rect(ox - 2, fy, 4, 1.5); g.fill({ color: ink }); break;
+    case "bow": box(g, ox + 7, -66, 9, 6, 0xff77a8, 5); box(g, ox + 10, -65, 3, 4, 0xd6336c, 3); break;
+    case "headphones": box(g, ox - 16, -52, 5, 10, 0x2b2b3a, 4); box(g, ox + 12, -52, 5, 10, 0x2b2b3a, 4); box(g, ox - 14, -66, 28, 3, 0x2b2b3a, 9); break;
+    default: break;
+  }
+  // 대기 중이면 상태색 테두리로 강조
+  if (loud) { g.roundRect(ox - 22, -76, 46 + DEPTH, 80, 10); g.stroke({ color: accent, width: 2.5, alpha: 0.9 }); }
 }
 
 // 말풍선 줄바꿈: 한 줄 14자, 최대 3줄
@@ -173,7 +176,7 @@ const BODY_W = 40;
 const BODY_H = 58;
 const HEAD_R = 13;
 const HEAD_CY = -BODY_H + HEAD_R + 2;
-const NAMEPLATE_Y = -BODY_H - 22;
+const NAMEPLATE_Y = -BODY_H - 46;
 const TODO_PROGRESS_Y = NAMEPLATE_Y + 9;
 
 interface CommandCenterPeerProps {
@@ -386,7 +389,7 @@ function CommandCenterPeerComponent({
         </pixiContainer>
       )}
 
-      <pixiContainer y={bob}>
+      <pixiContainer y={bob} scale={1.3}>
         <pixiGraphics draw={drawBody} />
       </pixiContainer>
 
