@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTick } from "@pixi/react";
 import { Graphics, Texture } from "pixi.js";
 import type { Position } from "@/types";
@@ -52,14 +52,16 @@ function walkAlong(e: Errand, dt: number): boolean {
   return e.i >= e.waypoints.length - 1;
 }
 
-// ── 캐릭터 꾸미기: 세션 id 해시로 셔츠·피부·머리·액세서리를 고른다 ──
-const SHIRTS = [0xe8590c, 0x1c7ed6, 0x2f9e44, 0xae3ec9, 0xd6336c, 0x0ca678, 0xf59f00, 0x5c7cfa, 0xe03131, 0x495057, 0x15aabf, 0x845ef7];
-const SKINS = [0xf6d3b9, 0xeec1a0, 0xd9a07b, 0xb87a52, 0x8d5a3b];
-const HAIRS = [0x2b2118, 0x5a3a1e, 0x8c5a2b, 0xd9b35c, 0xb4532a, 0x1f1f2e, 0xc0c0c8, 0xe599f7];
-type HairStyle = "short" | "spiky" | "long" | "bob" | "bun" | "mohawk" | "bald";
-const HAIR_STYLES: HairStyle[] = ["short", "spiky", "long", "bob", "bun", "mohawk", "bald"];
-type Accessory = "none" | "cap" | "beanie" | "crown" | "bow" | "glasses" | "sunglasses" | "headset" | "flower" | "party";
-const ACCESSORIES: Accessory[] = ["none", "cap", "beanie", "crown", "bow", "glasses", "sunglasses", "headset", "flower", "party"];
+// ── 캐릭터 꾸미기: 16비트 레트로 픽셀 스프라이트(14×20 도트, 1도트 = 3px) ──
+// 세션 id 해시로 셔츠·피부·머리 모양·머리색·소품이 정해진다(같은 세션은 늘 같은 모습). 팔레트는 PICO-8 계열.
+const PX = 3;
+const SHIRTS = [0xff004d, 0x29adff, 0x00e436, 0xffa300, 0x7e2553, 0x83769c, 0xff77a8, 0x008751, 0xab5236, 0x1d2b53, 0x5fcde4, 0xd95763];
+const SKINS = [0xffccaa, 0xf2b48c, 0xd99a6c, 0xab7650, 0x7a4b2e];
+const HAIRS = [0x2b1d14, 0x5f3a1e, 0xab5236, 0xffd166, 0x1d1d2b, 0xff77a8, 0xc2c3c7, 0x4b7bd6];
+type HairStyle = "short" | "long" | "spiky" | "bun" | "bald" | "side";
+const HAIR_STYLES: HairStyle[] = ["short", "long", "spiky", "bun", "bald", "side"];
+type Accessory = "none" | "cap" | "beanie" | "crown" | "glasses" | "sunglasses" | "bow" | "headphones";
+const ACCESSORIES: Accessory[] = ["none", "none", "cap", "beanie", "crown", "glasses", "sunglasses", "bow", "headphones"];
 interface Look { shirt: number; skin: number; hair: number; style: HairStyle; accessory: Accessory; tie: boolean; cheeks: boolean }
 
 const lookCache = new Map<string, Look>();
@@ -78,72 +80,92 @@ function lookFor(id: string): Look {
   return look;
 }
 
-function drawCharacter(g: Graphics, L: Look, accent: number, loud: boolean): void {
-  // 레트로 레고 미니피규어: 노란 원통 머리 + 꼭지, 점 눈·웃는 입, 사다리꼴 몸통, C자 손, 블록 다리
-  const YELLOW = 0xffd23f, YDARK = 0xd9a400, INK = 0x1a1a1a;
-  const legsC = 0x2b3a67; // 남색 바지
-  // 다리·엉덩이
-  g.roundRect(-14, -14, 28, 5, 1.5); g.fill({ color: legsC });
-  g.roundRect(-14, -9, 13, 9, 1.5); g.roundRect(1, -9, 13, 9, 1.5); g.fill({ color: legsC });
-  g.rect(-1, -9, 2, 9); g.fill({ color: 0x1b2647 });
-  // 팔(몸통 양옆, 셔츠색) + C자 손
-  g.poly([-13, -36, -19, -33, -21, -20, -16, -19, -13, -30]); g.fill({ color: L.shirt });
-  g.poly([13, -36, 19, -33, 21, -20, 16, -19, 13, -30]); g.fill({ color: L.shirt });
-  g.circle(-18.5, -16.5, 3.6); g.circle(18.5, -16.5, 3.6); g.fill({ color: YELLOW });
-  g.circle(-18.5, -16.5, 1.4); g.circle(18.5, -16.5, 1.4); g.fill({ color: YDARK });
-  // 몸통(사다리꼴) + 상태색 테두리
-  g.poly([-12, -37, 12, -37, 15, -14, -15, -14]); g.fill({ color: L.shirt });
-  g.poly([-12, -37, 12, -37, 15, -14, -15, -14]); g.stroke({ color: accent, width: loud ? 3 : 2, alpha: 0.95 });
-  // 몸통 프린트
-  if (L.tie) { g.poly([0, -36, -3, -33, 0, -22, 3, -33]); g.fill({ color: INK }); }
-  else { g.rect(-4, -34, 8, 2); g.fill({ color: 0xffffff, alpha: 0.55 }); g.circle(0, -27, 2.4); g.fill({ color: 0xffffff, alpha: 0.5 }); }
-  // 목
-  g.rect(-4, -39, 8, 3); g.fill({ color: YDARK });
-  // 머리(원통) + 꼭지
-  g.roundRect(-10, -55, 20, 17, 4); g.fill({ color: YELLOW });
-  g.rect(-10, -48, 3, 6); g.fill({ color: YDARK, alpha: 0.35 }); // 원통 음영
-  const hasHat = L.accessory === "cap" || L.accessory === "beanie" || L.accessory === "crown" || L.accessory === "party";
-  if (!hasHat && L.style === "bald") { g.roundRect(-5, -59, 10, 5, 1.5); g.fill({ color: YELLOW }); }
-  // 머리카락(블록형 가발)
-  if (!hasHat) {
-    switch (L.style) {
-      case "short": case "spiky": case "mohawk":
-        g.roundRect(-11, -59, 22, 9, 4); g.fill({ color: L.hair });
-        if (L.style === "spiky") { g.poly([-9, -59, -6, -64, -3, -59, 0, -65, 3, -59, 6, -64, 9, -59]); g.fill({ color: L.hair }); }
-        if (L.style === "mohawk") { g.roundRect(-2, -66, 4, 8, 1.5); g.fill({ color: L.hair }); }
-        break;
-      case "long": case "bob":
-        g.roundRect(-12, -59, 24, 9, 4); g.fill({ color: L.hair });
-        g.roundRect(-12, -52, 4, L.style === "long" ? 18 : 11, 2); g.roundRect(8, -52, 4, L.style === "long" ? 18 : 11, 2); g.fill({ color: L.hair });
-        break;
-      case "bun":
-        g.roundRect(-11, -59, 22, 8, 4); g.fill({ color: L.hair }); g.circle(0, -62, 4.5); g.fill({ color: L.hair });
-        break;
-      default: break;
-    }
+function shade(c: number, k: number): number {
+  const r = Math.round(((c >> 16) & 255) * k), g = Math.round(((c >> 8) & 255) * k), b = Math.round((c & 255) * k);
+  return (Math.min(255, r) << 16) | (Math.min(255, g) << 8) | Math.min(255, b);
+}
+
+// 기본 몸(앞모습). o 외곽선 · h 머리 · s 피부 · S 피부그늘 · e 눈 · m 입 · c 셔츠 · C 셔츠그늘 · w 칼라 · k 벨트 · p 바지 · b 신발
+const BASE = [
+  "....oooooo....",
+  "...ohhhhhho...",
+  "..ohhhhhhhho..",
+  "..ohhhhhhhho..",
+  "..ohhssssshho.",
+  "..osesssseso..",
+  "..ossssssssо..".replace("о", "o"),
+  "..osssmmssso..",
+  "...oSSSSSSo...",
+  "....oCwwCo....",
+  ".occcccccccco.",
+  ".occcccccccco.",
+  "oscccccccccCso",
+  ".oCCCCCCCCCCo.",
+  "..okkkkkkkko..",
+  "..oppppppppo..",
+  "..opppoopppo..",
+  "..opppoopppo..",
+  "..obbboobbbo..",
+  "..oooo..oooo..",
+].map((r) => r.padEnd(14, ".").slice(0, 14).split(""));
+
+function spriteFor(L: Look, frame: number): { grid: string[][]; extra: Array<[number, number, string]> } {
+  const g = BASE.map((r) => r.slice());
+  const extra: Array<[number, number, string]> = []; // 머리 위(음수 행) 도트
+  const set = (r: number, c: number, v: string) => { if (r >= 0 && r < g.length && c >= 0 && c < 14) g[r][c] = v; else extra.push([r, c, v]); };
+  // 머리 모양
+  if (L.style === "bald") { for (let c = 3; c <= 10; c++) for (const r of [1, 2, 3]) if (g[r][c] === "h") set(r, c, r === 1 ? "h" : "s"); set(4, 3, "s"); set(4, 4, "s"); set(4, 9, "s"); set(4, 10, "s"); }
+  if (L.style === "long") { for (let r = 4; r <= 10; r++) { set(r, 2, "h"); set(r, 11, "h"); set(r, 1, "o"); set(r, 12, "o"); } }
+  if (L.style === "side") { for (let r = 4; r <= 6; r++) set(r, 3, "h"); set(3, 4, "h"); }
+  if (L.style === "spiky") { set(-1, 4, "o"); set(-1, 6, "o"); set(-1, 8, "o"); set(0, 4, "h"); set(0, 6, "h"); set(0, 8, "h"); set(-2, 4, "o"); set(-2, 6, "o"); set(-2, 8, "o"); }
+  if (L.style === "bun") { for (let c = 5; c <= 8; c++) { set(-1, c, "h"); set(-2, c, "o"); } set(-1, 4, "o"); set(-1, 9, "o"); }
+  // 소품
+  if (L.accessory === "cap") { for (let r = 0; r <= 3; r++) for (let c = 2; c <= 11; c++) if ("hs".includes(g[r][c])) set(r, c, "c"); for (let c = 3; c <= 13; c++) set(4, c, c >= 11 ? "C" : g[4][c] === "o" ? "o" : "C"); }
+  if (L.accessory === "beanie") { for (let r = 0; r <= 3; r++) for (let c = 2; c <= 11; c++) if ("hs".includes(g[r][c])) set(r, c, r === 3 ? "w" : "R"); set(-1, 6, "w"); set(-1, 7, "w"); }
+  if (L.accessory === "crown") { for (const c of [4, 6, 7, 9]) set(-1, c, "Y"); for (let c = 4; c <= 9; c++) set(0, c, "Y"); }
+  if (L.accessory === "glasses") { set(5, 3, "o"); set(5, 5, "o"); set(5, 8, "o"); set(5, 10, "o"); set(5, 6, "o"); set(5, 7, "o"); }
+  if (L.accessory === "sunglasses") { for (let c = 3; c <= 10; c++) set(5, c, "K"); }
+  if (L.accessory === "bow") { set(1, 10, "P"); set(1, 12, "P"); set(0, 11, "P"); set(2, 11, "P"); set(1, 11, "Q"); }
+  if (L.accessory === "headphones") { for (let r = 3; r <= 6; r++) { set(r, 1, "K"); set(r, 12, "K"); } for (let c = 3; c <= 10; c++) set(-1, c, "K"); set(0, 2, "K"); set(0, 11, "K"); }
+  if (L.tie) { set(10, 6, "k"); set(10, 7, "k"); set(11, 6, "k"); set(11, 7, "k"); set(12, 6, "k"); }
+  if (L.cheeks) { set(6, 3, "r"); set(6, 10, "r"); }
+  // 걷기·타자 프레임: 다리/손을 번갈아
+  if (frame === 1) { g[18][3] = "o"; g[18][4] = "b"; g[19][3] = "."; g[19][4] = "o"; g[12][1] = "c"; g[11][1] = "s"; }
+  if (frame === 2) { g[18][9] = "o"; g[18][10] = "b"; g[19][10] = "."; g[19][9] = "o"; g[12][12] = "c"; g[11][12] = "s"; }
+  return { grid: g, extra };
+}
+
+function drawCharacter(g: Graphics, L: Look, accent: number, loud: boolean, frame = 0): void {
+  const OUT = 0x1a1c2c;
+  const pal: Record<string, number> = {
+    o: OUT, h: L.hair, s: L.skin, S: shade(L.skin, 0.82), e: OUT, m: 0x7e2553,
+    c: L.shirt, C: shade(L.shirt, 0.72), w: 0xfff1e8, k: 0x2b2b3a, p: 0x3b4a7a, b: 0x2a1d1d,
+    R: 0xd62f3a, Y: 0xffd23f, K: 0x111111, P: 0xff77a8, Q: 0xd6336c, r: 0xff8fa3,
+  };
+  const { grid, extra } = spriteFor(L, frame);
+  const x0 = -7 * PX, y0 = -20 * PX;
+  // 상태 테두리(발밑 그림자는 drawShadow에서): 작업 상태색으로 1도트 바깥 후광
+  for (let r = 0; r < grid.length; r++) for (let c = 0; c < 14; c++) {
+    const v = grid[r][c];
+    if (v === ".") continue;
+    g.rect(x0 + c * PX, y0 + r * PX, PX, PX); g.fill({ color: pal[v] ?? OUT });
   }
-  // 얼굴: 점 눈 + 웃는 입 (선글라스면 눈 대신 선글라스)
-  if (L.accessory === "sunglasses") { g.roundRect(-8, -49, 16, 4, 1.5); g.fill({ color: INK }); }
-  else { g.circle(-3.5, -47, 1.4); g.circle(3.5, -47, 1.4); g.fill({ color: INK }); }
-  g.arc(0, -44.5, 3.4, 0.25, Math.PI - 0.25); g.stroke({ color: INK, width: 1.2 });
-  if (L.cheeks) { g.circle(-6.5, -43.5, 1.6); g.circle(6.5, -43.5, 1.6); g.fill({ color: 0xff7a7a, alpha: 0.55 }); }
-  // 액세서리
-  switch (L.accessory) {
-    case "cap": g.roundRect(-11, -60, 22, 8, 4); g.fill({ color: L.shirt }); g.roundRect(-2, -54, 16, 3, 1.5); g.fill({ color: L.shirt }); break;
-    case "beanie": g.roundRect(-11, -61, 22, 10, 5); g.fill({ color: 0xc92a2a }); g.rect(-11, -54, 22, 3); g.fill({ color: 0xffffff }); g.circle(0, -62, 3); g.fill({ color: 0xffffff }); break;
-    case "crown": g.poly([-9, -54, -9, -63, -4.5, -58, 0, -65, 4.5, -58, 9, -63, 9, -54]); g.fill({ color: 0xfcc419 }); g.stroke({ color: 0xe67700, width: 1 }); break;
-    case "party": g.poly([-6, -55, 6, -55, 0, -69]); g.fill({ color: 0x7950f2 }); g.circle(0, -69, 2.4); g.fill({ color: 0xffd43b }); break;
-    case "bow": g.poly([6, -58, 13, -62, 13, -54]); g.poly([6, -58, -1, -62, -1, -54]); g.fill({ color: 0xff6b9a }); g.circle(6, -58, 2); g.fill({ color: 0xd6336c }); break;
-    case "glasses": g.circle(-3.5, -47, 3); g.circle(3.5, -47, 3); g.stroke({ color: INK, width: 1.1 }); break;
-    case "flower": for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; g.circle(-8 + Math.cos(a) * 3, -57 + Math.sin(a) * 3, 2.2); } g.fill({ color: 0xffffff }); g.circle(-8, -57, 1.8); g.fill({ color: 0xffd43b }); break;
-    default: break;
-  }
+  for (const [r, c, v] of extra) { g.rect(x0 + c * PX, y0 + r * PX, PX, PX); g.fill({ color: pal[v] ?? OUT }); }
+  if (loud) { g.rect(x0 - PX, y0 - PX * 3, PX * 16, PX * 24); g.stroke({ color: accent, width: 2, alpha: 0.9 }); }
+}
+
+// 말풍선 줄바꿈: 한 줄 14자, 최대 3줄
+function wrap3(text: string, per = 14, max = 3): string[] {
+  const t = text.replace(/\s+/g, " ").trim();
+  const lines: string[] = [];
+  for (let i = 0; i < t.length && lines.length < max; i += per) lines.push(t.slice(i, i + per));
+  if (t.length > per * max) lines[max - 1] = lines[max - 1].slice(0, per - 1) + "…";
+  return lines;
 }
 
 function shortTask(s: string | null): string {
   if (!s) return "💻 작업 중";
-  const t = s.replace(/\s+/g, " ").trim();
-  return `💻 ${t.length > 14 ? t.slice(0, 13) + "…" : t}`;
+  return `▶ ${s.replace(/\s+/g, " ").trim()}`;
 }
 
 // Body geometry (compact relative to the office BossSprite).
@@ -167,8 +189,6 @@ interface CommandCenterPeerProps {
 
 function CommandCenterPeerComponent({
   peer,
-  headsetTexture,
-  sunglassesTexture,
   onActivate,
   positionOverride,
   alphaOverride,
@@ -183,6 +203,11 @@ function CommandCenterPeerComponent({
 
   // ── 살아 있는 느낌: 프레임마다 시간 진행 + 쉬는 세션의 심부름 ──
   const [now, setNow] = useState(0);
+  const [fontReady, setFontReady] = useState(false);
+  useEffect(() => {
+    if (typeof document === "undefined" || !document.fonts) return;
+    document.fonts.load('26px "Galmuri11"').then(() => setFontReady(true)).catch(() => {});
+  }, []);
   const errand = useRef<Errand>({
     phase: "idle",
     nextAt: performance.now() + 4000 + Math.random() * 12000,
@@ -241,19 +266,24 @@ function CommandCenterPeerComponent({
               ? ""
               : "😌 휴식 중";
   const bubbleAlpha = isNeedsYou ? 0.65 + 0.35 * Math.abs(Math.sin(now / 300)) : 1;
-  const bubbleW = Math.max(80, bubble.length * 30 + 40); // 2x 단위(0.5 배율 컨테이너)
+  const lines = bubble ? wrap3(bubble) : [];
+  const maxLen = lines.reduce((m, l) => Math.max(m, l.length), 0);
+  const bubbleW = Math.max(90, maxLen * 26 + 36); // 2x 단위(0.5 배율 컨테이너)
+  const bubbleH = lines.length * 32 + 22;
   const drawSpeech = useCallback(
     (g: Graphics) => {
       g.clear();
-      g.roundRect(-bubbleW / 2, -30, bubbleW, 56, 16);
-      g.fill({ color: isNeedsYou ? 0xfbbf24 : 0xffffff, alpha: 0.96 });
-      g.moveTo(-12, 26);
-      g.lineTo(12, 26);
-      g.lineTo(0, 42);
-      g.closePath();
-      g.fill({ color: isNeedsYou ? 0xfbbf24 : 0xffffff, alpha: 0.96 });
+      const fill = isNeedsYou ? 0xffd23f : 0xfff1e8, ink = 0x1a1c2c, s4 = 4;
+      const x = -bubbleW / 2, y = -bubbleH;
+      // 도트 박스: 모서리 1칸 깎기 + 두꺼운 외곽선 + 아래 그림자
+      g.rect(x + s4, y + s4 * 2, bubbleW, bubbleH); g.fill({ color: ink, alpha: 0.35 });
+      g.rect(x + s4, y, bubbleW - s4 * 2, bubbleH); g.rect(x, y + s4, bubbleW, bubbleH - s4 * 2); g.fill({ color: ink });
+      g.rect(x + s4 * 2, y + s4, bubbleW - s4 * 4, bubbleH - s4 * 2); g.rect(x + s4, y + s4 * 2, bubbleW - s4 * 2, bubbleH - s4 * 4); g.fill({ color: fill });
+      // 꼬리(계단)
+      for (let i = 0; i < 3; i++) { g.rect(-s4 * (3 - i), y + bubbleH - s4 + i * s4, s4 * (6 - i * 2), s4); g.fill({ color: ink }); }
+      for (let i = 0; i < 2; i++) { g.rect(-s4 * (2 - i), y + bubbleH - s4 * 2 + i * s4, s4 * (4 - i * 2), s4); g.fill({ color: fill }); }
     },
-    [bubbleW, isNeedsYou],
+    [bubbleW, bubbleH, isNeedsYou],
   );
 
   const drawShadow = useCallback(
@@ -341,44 +371,23 @@ function CommandCenterPeerComponent({
     >
       <pixiGraphics draw={drawShadow} />
 
-      {/* 말풍선(작업 내용 · 대기 · 심부름) */}
-      {bubble && (
-        <pixiContainer y={NAMEPLATE_Y - 40 + bob - (peer.slotIndex % 2 ? 30 : 0)} scale={0.5} alpha={bubbleAlpha}>
+      {/* 말풍선(작업 내용 · 대기 · 심부름) — 레트로 도트 박스, 최대 3줄 */}
+      {lines.length > 0 && (
+        <pixiContainer y={NAMEPLATE_Y - 14 + bob - (peer.slotIndex % 2 ? 40 : 0)} scale={0.5} alpha={bubbleAlpha}>
           <pixiGraphics draw={drawSpeech} />
           <pixiText
-            text={bubble}
-            anchor={0.5}
+            key={fontReady ? "f1" : "f0"}
+            text={lines.join("\n")}
+            anchor={{ x: 0.5, y: 1 }}
+            y={-14}
             resolution={2}
-            style={{ fontFamily: "Apple SD Gothic Neo, Pretendard, Noto Sans KR, sans-serif", fontSize: 30, fill: 0x111827, fontWeight: "bold" }}
+            style={{ fontFamily: "Galmuri11, Galmuri9, Apple SD Gothic Neo, sans-serif", fontSize: 26, lineHeight: 32, fill: 0x1a1c2c, align: "center" }}
           />
         </pixiContainer>
       )}
 
       <pixiContainer y={bob}>
         <pixiGraphics draw={drawBody} />
-
-        {/* Sunglasses — 선글라스 액세서리인 캐릭터만 */}
-        {sunglassesTexture && look.accessory === "sunglasses" && (
-          <pixiSprite
-            texture={sunglassesTexture}
-            anchor={0.5}
-            x={0}
-            y={HEAD_CY + 1}
-            scale={{ x: 0.03, y: 0.034 }}
-            tint={0x000000}
-          />
-        )}
-
-        {/* Headset — 헤드셋 액세서리인 캐릭터만 */}
-        {headsetTexture && look.accessory === "headset" && (
-          <pixiSprite
-            texture={headsetTexture}
-            anchor={0.5}
-            x={0}
-            y={HEAD_CY}
-            scale={{ x: 0.56, y: 0.57 }}
-          />
-        )}
       </pixiContainer>
 
       {/* Project nameplate */}
