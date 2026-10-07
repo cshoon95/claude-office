@@ -80,6 +80,10 @@ export function PeerPopup({
   if (x + POPUP_WIDTH > vw - POPUP_MARGIN) x = popup.x - POPUP_WIDTH - 16;
   if (y + 260 > vh - POPUP_MARGIN) y = vh - 260 - POPUP_MARGIN;
   if (y < POPUP_MARGIN) y = POPUP_MARGIN;
+  // (로컬 커스텀) 좁은 화면(휴대폰)에선 왼쪽으로 밀려 잘리지 않게 가운데 정렬하고,
+  // 어떤 경우든 화면 안으로 끌어온다
+  if (vw < 640) x = (vw - POPUP_WIDTH) / 2;
+  x = Math.max(POPUP_MARGIN, Math.min(x, vw - POPUP_WIDTH - POPUP_MARGIN));
 
   const isMacHost = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
 
