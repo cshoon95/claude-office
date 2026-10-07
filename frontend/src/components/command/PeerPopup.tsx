@@ -10,9 +10,11 @@ import type { CommandPeer } from "./useCommandCenterPeers";
 import { ZONE_ORDER } from "./layout";
 import { manualApi, useManualStore } from "./manualApi";
 import { ZONE_KO } from "./ManualTaskModal";
+import { chatWith } from "./chatApi";
 
 const POPUP_WIDTH = 260;
 const POPUP_MARGIN = 16;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface PeerPopupState {
   peer: CommandPeer;
@@ -76,7 +78,7 @@ export function PeerPopup({
   let x = popup.x + 16;
   let y = popup.y - 40;
   if (x + POPUP_WIDTH > vw - POPUP_MARGIN) x = popup.x - POPUP_WIDTH - 16;
-  if (y + 220 > vh - POPUP_MARGIN) y = vh - 220 - POPUP_MARGIN;
+  if (y + 260 > vh - POPUP_MARGIN) y = vh - 260 - POPUP_MARGIN;
   if (y < POPUP_MARGIN) y = POPUP_MARGIN;
 
   const handleFocusTerminal = () => {
@@ -192,6 +194,18 @@ export function PeerPopup({
             {t("commandCenter.popup.drillIn")}
           </button>
         </div>
+        )}
+        {/* (로컬 커스텀) 이 세션에 이어서 말 걸기(채팅 패널) */}
+        {!manual && UUID_RE.test(peer.sessionId) && (
+          <button
+            onClick={() => {
+              chatWith(peer.sessionId);
+              onClose();
+            }}
+            className="mt-2 w-full py-1.5 rounded-lg text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 transition-colors"
+          >
+            💬 여기에 명령
+          </button>
         )}
       </div>
     </div>
