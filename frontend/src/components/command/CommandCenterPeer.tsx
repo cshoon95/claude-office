@@ -195,7 +195,8 @@ function wrap3(text: string, per = 14, max = 3): string[] {
 
 function shortTask(s: string | null): string {
   if (!s) return "💻 작업 중";
-  return `▶ ${s.replace(/\s+/g, " ").trim()}`;
+  const clean = s.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return `▶ ${clean || "작업 중"}`;
 }
 
 // Body geometry (compact relative to the office BossSprite).
