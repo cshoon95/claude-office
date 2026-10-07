@@ -10,6 +10,7 @@ const COLLAPSE_KEY = "pixel-office-chat-collapsed";
 const MAX_CONVS = 20;
 const MAX_MSGS = 300;
 const POLL_MS = 1000;
+const MAX_POLL_FAILURES = 20;
 
 export type ChatKind = "user" | "status" | "text" | "tool" | "tool_result" | "result" | "error";
 
@@ -28,6 +29,7 @@ export interface Conversation {
   running: boolean;
   lastSeq: number;
   updated: number;
+  bornHere?: boolean; // 이 채팅창에서 새로 시작한 세션(터미널에 열려 있을 리 없음)
 }
 
 export interface ChatFolder {
@@ -58,6 +60,8 @@ interface ChatStore {
   disabled: string | null; // 서버 스위치가 꺼져 있을 때의 안내
   error: string | null;
   collapsed: boolean;
+  confirmed: Record<string, true>; // 터미널과 같이 써도 된다고 한 번 확인받은 세션
+  confirm: (sessionId: string) => void;
   setTarget: (key: string) => void;
   setCollapsed: (v: boolean) => void;
   loadFolders: () => Promise<void>;
@@ -67,6 +71,10 @@ interface ChatStore {
 }
 
 export const isNewKey = (key: string) => key.startsWith("new:");
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** 진짜 Claude Code 세션 id 인가(직접 추가한 캐릭터는 아님) */
+export const isClaudeSessionId = (id: string) => UUID_RE.test(id);
 
 // ---------------------------------------------------------------------------
 // 저장(localStorage) — 실패해도 화면은 돌아가야 한다
@@ -167,6 +175,7 @@ export const useChatStore = create<ChatStore>()((set, get) => {
     const merged: Conversation = {
       ...old,
       key: sessionId,
+      bornHere: true,
       messages: [...(conversations[sessionId]?.messages ?? []), ...old.messages],
     };
     const next = { ...conversations, [sessionId]: merged };
@@ -180,6 +189,7 @@ export const useChatStore = create<ChatStore>()((set, get) => {
   const poll = async (runId: string) => {
     if (polling.has(runId)) return;
     polling.add(runId);
+    let failures = 0;
     try {
       for (;;) {
         const key = runKey.get(runId);
@@ -189,20 +199,30 @@ export const useChatStore = create<ChatStore>()((set, get) => {
         try {
           view = await call<RunView>("GET", `/runs/${runId}?after=${after}`);
         } catch (e) {
-          if ((e as { status?: number }).status === 404 || isOff(e)) {
+          const status = (e as ApiError).status;
+          failures += 1;
+          // 401·403·404 는 기다려도 안 풀린다 — 바로 멈춘다. 그 밖(끊김 등)은 점점 늦춰 20번까지
+          const fatal = status === 401 || status === 403 || status === 404;
+          if (fatal || failures >= MAX_POLL_FAILURES) {
+            const text =
+              status === 401
+                ? "토큰이 없어요: 맥에서 office.sh lan url 주소로 다시 여세요"
+                : fatal
+                  ? errText(e)
+                  : `응답을 못 받아 그만 기다려요 (${errText(e)})`;
             update(key, (c) => ({
               ...c,
               running: false,
-              messages: [...c.messages, { id: `x:${runId}`, kind: "error", text: errText(e), ts: Date.now() }],
+              messages: [...c.messages, { id: `x:${runId}:${Date.now()}`, kind: "error", text, ts: Date.now() }],
             }));
             if (isOff(e)) set({ disabled: errText(e) });
             runKey.delete(runId);
             return;
           }
-          // 잠깐 끊긴 것 — 다음 차례에 다시
-          await new Promise((r) => setTimeout(r, POLL_MS * 3));
+          await new Promise((r) => setTimeout(r, Math.min(POLL_MS * 2 ** failures, 15000)));
           continue;
         }
+        failures = 0;
         const events = view.events ?? [];
         const done = view.status !== "running";
         update(key, (c) => ({
@@ -245,6 +265,9 @@ export const useChatStore = create<ChatStore>()((set, get) => {
     disabled: null,
     error: null,
     collapsed: saved.collapsed,
+    confirmed: {},
+
+    confirm: (sessionId) => set({ confirmed: { ...get().confirmed, [sessionId]: true } }),
 
     setTarget: (key) => {
       set({ target: key, error: null });

@@ -10,11 +10,10 @@ import type { CommandPeer } from "./useCommandCenterPeers";
 import { ZONE_ORDER } from "./layout";
 import { manualApi, useManualStore } from "./manualApi";
 import { ZONE_KO } from "./ManualTaskModal";
-import { chatWith } from "./chatApi";
+import { chatWith, isClaudeSessionId } from "./chatApi";
 
 const POPUP_WIDTH = 260;
 const POPUP_MARGIN = 16;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface PeerPopupState {
   peer: CommandPeer;
@@ -206,7 +205,7 @@ export function PeerPopup({
         </div>
         )}
         {/* (로컬 커스텀) 이 세션에 이어서 말 걸기(채팅 패널) */}
-        {!manual && UUID_RE.test(peer.sessionId) && (
+        {!manual && isClaudeSessionId(peer.sessionId) && (
           <button
             onClick={() => {
               chatWith(peer.sessionId);

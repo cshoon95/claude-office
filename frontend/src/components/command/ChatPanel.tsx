@@ -5,9 +5,10 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Session } from "@/hooks/useSessions";
-import { isNewKey, registerChatInput, useChatStore, type ChatMsg } from "./chatApi";
+import { isClaudeSessionId, isNewKey, registerChatInput, useChatStore, type ChatMsg } from "./chatApi";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const LIVE_CONFIRM =
+  "이 세션은 지금 Orca/터미널에 열려 있을 수 있어요. 같이 쓰면 대화가 갈라질 수 있어요. 보낼까요?";
 const EMPTY: ChatMsg[] = [];
 
 function folderName(path: string): string {
@@ -79,16 +80,12 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, running, collapsed]);
 
-  // 실제 Claude 세션만(직접 추가한 캐릭터 제외), 활성 먼저
+  // 실제 Claude 세션만(직접 추가한 캐릭터 제외), 최근 것부터
   const sessionOptions = useMemo(
     () =>
       sessions
-        .filter((s) => UUID_RE.test(s.id))
-        .sort((a, b) => {
-          const aa = a.status === "active" ? 0 : 1;
-          const bb = b.status === "active" ? 0 : 1;
-          return aa - bb || b.updatedAt.localeCompare(a.updatedAt);
-        })
+        .filter((s) => isClaudeSessionId(s.id))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .slice(0, 40),
     [sessions],
   );
@@ -98,6 +95,14 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
   const submit = () => {
     const text = draft.trim();
     if (!text || running || !target) return;
+    // 터미널에서 지금 쓰는 세션일 수 있으면 한 번 묻는다(세션마다 한 번)
+    if (!isNewKey(target) && !conv?.bornHere && !useChatStore.getState().confirmed[target]) {
+      const live = sessions.find((s) => s.id === target)?.status === "active";
+      if (live) {
+        if (!window.confirm(LIVE_CONFIRM)) return;
+        useChatStore.getState().confirm(target);
+      }
+    }
     setDraft("");
     void send(text);
   };
