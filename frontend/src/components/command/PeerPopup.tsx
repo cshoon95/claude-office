@@ -81,6 +81,8 @@ export function PeerPopup({
   if (y + 260 > vh - POPUP_MARGIN) y = vh - 260 - POPUP_MARGIN;
   if (y < POPUP_MARGIN) y = POPUP_MARGIN;
 
+  const isMacHost = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+
   const handleFocusTerminal = () => {
     // peer.sessionId is this agent's own terminal — focus exactly that one.
     void focusAgentTerminal(peer.sessionId, null);
@@ -179,6 +181,9 @@ export function PeerPopup({
           </div>
         ) : (
         <div className="flex gap-2">
+          {/* (로컬 커스텀) 터미널 열기는 맥 화면의 창을 앞으로 띄우는 기능 —
+              맥에서만 쓰는 키가 필요해서 휴대폰(LAN)에선 숨긴다 */}
+          {isMacHost && (
           <button
             onClick={handleFocusTerminal}
             className="flex-1 flex items-center justify-center gap-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-colors"
@@ -186,6 +191,7 @@ export function PeerPopup({
             <Terminal size={13} />
             {t("commandCenter.popup.terminal")}
           </button>
+          )}
           <button
             onClick={handleDrill}
             className="flex-1 flex items-center justify-center gap-1.5 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 text-xs font-bold py-1.5 px-3 rounded-lg transition-colors"
