@@ -58,7 +58,11 @@ def validate_websocket_origin(websocket: WebSocket) -> bool:
     """
     origin = websocket.headers.get("origin")
     if origin is not None:
-        return origin.rstrip("/") in _allowed_ws_origins()
+        if origin.rstrip("/") in _allowed_ws_origins():
+            return True
+        from app.api.middleware import is_lan_host  # (로컬 커스텀) 사설망 허용
+
+        return is_lan_host(urlparse(origin).hostname)
 
     # Non-browser clients (no Origin) — always require the effective API key
     from app.config import get_settings

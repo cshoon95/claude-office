@@ -23,6 +23,22 @@ settings = get_settings()
 
 _LOCALHOST_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
+# (로컬 커스텀) 집 와이파이 같은 사설망에서 휴대폰·다른 맥으로 보기 — CLAUDE_OFFICE_ALLOW_LAN=1 일 때만
+import ipaddress as _ip
+import os as _os
+
+ALLOW_LAN = _os.environ.get("CLAUDE_OFFICE_ALLOW_LAN", "") in ("1", "true", "yes")
+
+
+def is_lan_host(host: str | None) -> bool:
+    if not ALLOW_LAN or not host:
+        return False
+    try:
+        a = _ip.ip_address(host)
+    except ValueError:
+        return host.endswith(".local")
+    return a.is_private and not a.is_loopback
+
 
 class LocalhostOnlyMiddleware(BaseHTTPMiddleware):
     """Reject HTTP requests from non-localhost origins.
@@ -37,7 +53,7 @@ class LocalhostOnlyMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         client_host = request.client.host if request.client else None
-        if client_host not in _LOCALHOST_HOSTS:
+        if client_host not in _LOCALHOST_HOSTS and not is_lan_host(client_host):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Access denied: localhost only"},
