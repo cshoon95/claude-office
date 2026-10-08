@@ -17,8 +17,6 @@ import {
 } from "./chatApi";
 import { HighlightLayer, RichText, SkillChip, skillFromTool, usedSkills } from "./skillText";
 
-const LIVE_CONFIRM =
-  "이 세션은 지금 Orca/터미널에 열려 있을 수 있어요. 같이 쓰면 대화가 갈라질 수 있어요. 보낼까요?";
 const EMPTY: ChatMsg[] = [];
 const HISTORY_POLL_MS = 3000;
 
@@ -238,14 +236,6 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
   const submit = () => {
     const text = draft.trim();
     if (!text || running || !target) return;
-    // 터미널에서 지금 쓰는 세션일 수 있으면 한 번 묻는다(세션마다 한 번)
-    if (!isNewKey(target) && !conv?.bornHere && !useChatStore.getState().confirmed[target]) {
-      const live = sessions.find((s) => s.id === target)?.status === "active";
-      if (live) {
-        if (!window.confirm(LIVE_CONFIRM)) return;
-        useChatStore.getState().confirm(target);
-      }
-    }
     setDraft("");
     setRecall(-1);
     void send(text);
