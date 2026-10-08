@@ -193,10 +193,18 @@ function wrap3(text: string, per = 12, max = 3): string[] {
   return lines;
 }
 
+// 마지막 질문 — 태그·[Image #N]·[Pasted text] 같은 첨부 표시는 빼고
+function cleanTask(s: string | null): string {
+  if (!s) return "";
+  return s
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\[(Image|Pasted text)[^\]]*\]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function shortTask(s: string | null): string {
-  if (!s) return "💻 작업 중";
-  const clean = s.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-  return `▶ ${clean || "작업 중"}`;
+  return `▶ ${cleanTask(s) || "작업 중"}`;
 }
 
 // Body geometry (compact relative to the office BossSprite).
@@ -331,15 +339,18 @@ function CommandCenterPeerComponent({
   const walking = view.phase === "go" || view.phase === "back";
   const pos = basePos; // 걷는 동안의 위치는 tick 에서 직접 옮긴다
   // 말풍선 문구
-  const bubble =
-    view.phase === "stay"
-      ? view.text
-      : isNeedsYou
-        ? "🙋 답 기다려요"
-        : peer.bucket === "working"
-          ? shortTask(peer.currentTask)
-          : peer.bucket === "ended"
-            ? "💤"
+  // (로컬 커스텀) 말풍선은 항상 마지막 질문 — 쉬는 중·심부름 중에도
+  const lastAsk = cleanTask(peer.currentTask);
+  const bubble = isNeedsYou
+    ? "🙋 답 기다려요"
+    : peer.bucket === "working"
+      ? shortTask(peer.currentTask)
+      : peer.bucket === "ended"
+        ? "💤"
+        : lastAsk
+          ? `✓ ${lastAsk}`
+          : view.phase === "stay"
+            ? view.text
             : walking
               ? ""
               : "😌 휴식 중";

@@ -160,6 +160,7 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
   };
   const draftSkills = usedSkills(draft, known);
 
+
   useEffect(() => {
     void loadFolders();
   }, [loadFolders]);
@@ -173,6 +174,32 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
     const last = history[history.length - 1].ts;
     return [...history, ...local.filter((m) => m.ts > last)];
   }, [history, conv?.messages]);
+
+  // ↑/↓ 로 이 대화에서 보낸 프롬프트 다시 불러오기(터미널처럼). 최신 것부터, 연속 중복은 하나로
+  const sent = useMemo(() => {
+    const out: string[] = [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.kind === "user" && m.text !== out[out.length - 1]) out.push(m.text);
+    }
+    return out;
+  }, [messages]);
+  // -1 = 지금 쓰는 글. 대상을 바꾸면 처음부터(다른 대상의 위치는 무시)
+  const [recallAt, setRecallAt] = useState<{ key: string | null; i: number }>({ key: null, i: -1 });
+  const recall = recallAt.key === target ? recallAt.i : -1;
+  const setRecall = (i: number) => setRecallAt({ key: target, i });
+  const [stash, setStash] = useState("");
+  const recallTo = (i: number) => {
+    const text = i < 0 ? stash : sent[i];
+    setRecall(i);
+    setDraft(text);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.setSelectionRange(text.length, text.length);
+      setCaret(text.length);
+    });
+  };
 
   // 세션을 보고 있는 동안 기록을 3초마다 새로 읽는다(터미널에서 진행 중인 대화도 따라 보이게)
   useEffect(() => {
@@ -220,6 +247,7 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
       }
     }
     setDraft("");
+    setRecall(-1);
     void send(text);
   };
 
@@ -238,6 +266,25 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
       }
       if (e.key === "Escape") {
         setCaret(-1);
+        return;
+      }
+    }
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.nativeEvent.isComposing && !e.shiftKey) {
+      const el = e.currentTarget;
+      const before = el.value.slice(0, el.selectionStart);
+      const after = el.value.slice(el.selectionEnd);
+      // 커서가 첫 줄(↑)·마지막 줄(↓)에 있을 때만 — 여러 줄 글 안에서는 원래대로 줄 이동.
+      // 불러온 글을 고치지 않았으면 줄 위치와 상관없이 계속 넘긴다
+      const browsing = recall >= 0 && draft === sent[recall];
+      if (e.key === "ArrowUp" && (browsing || !before.includes("\n")) && recall < sent.length - 1) {
+        e.preventDefault();
+        if (recall < 0) setStash(draft);
+        recallTo(recall + 1);
+        return;
+      }
+      if (e.key === "ArrowDown" && (browsing || !after.includes("\n")) && recall >= 0) {
+        e.preventDefault();
+        recallTo(recall - 1);
         return;
       }
     }
@@ -410,6 +457,7 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
                   onChange={(e) => {
                     setDraft(e.target.value);
                     setCaret(e.target.selectionStart);
+                    setRecall(-1);
                     setPick(0);
                   }}
                   onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
@@ -444,7 +492,7 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
               )}
             </div>
             <div className="mt-1 hidden md:block px-1 text-[10px] text-slate-600">
-              Enter 보내기 · Shift+Enter 줄바꿈 · / 스킬 목록
+              Enter 보내기 · Shift+Enter 줄바꿈 · ↑↓ 지난 프롬프트 · / 스킬 목록
             </div>
           </div>
         )}
