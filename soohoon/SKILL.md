@@ -42,6 +42,6 @@ description: 픽셀 오피스(claude-office — Claude Code 세션을 보스·�
 
 ## 알림·보안·업데이트
 - `office.sh notify on|off|test` — "확인 필요"가 되면 휴대폰 푸시(ntfy 앱에서 출력된 토픽 구독). 토픽은 설정 파일에만, 공유 금지
-- `bash <wiki>/tools/claude-office/auto-off.sh install 19:00` — 매일 그 시각 휴대폰 채팅·LAN 끄기(회사 맥북). `status`/`uninstall`
+- `bash ~/.claude/skills/pixel-office/auto-off.sh install 19:00` — 매일 그 시각 휴대폰 채팅·LAN 끄기(회사 컴퓨터용). `status`/`uninstall`
 - Tailscale: LAN 모드에서 100.64.0.0/10·`*.ts.net` 주소도 허용(토큰은 그대로 필요)
-- 원본 업데이트 확인: `bash <wiki>/tools/claude-office/update-upstream.sh` (리베이스 시험만, 실제 적용은 안내만)
+- 최신 버전으로 업데이트: 한 줄 설치 명령을 다시 실행(curl … soohoon/install.sh | bash)
