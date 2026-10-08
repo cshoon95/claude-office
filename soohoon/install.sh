@@ -58,6 +58,16 @@ step "④ Claude Code 연결(훅)"
 mkdir -p ~/.claude
 [ -f ~/.claude/settings.json.bak-before-claude-office ] || cp ~/.claude/settings.json ~/.claude/settings.json.bak-before-claude-office 2>/dev/null || true
 (cd hooks && ./install.sh >/dev/null) && echo "훅 설치 완료 (원래 설정 백업: ~/.claude/settings.json.bak-before-claude-office)"
+# ~/.local/bin 이 PATH 에 없으면 Claude Code 가 훅 명령을 못 찾는다 → 설정에 전체 경로로 적는다
+if ! command -v claude-office-hook >/dev/null && [ -x "$HOME/.local/bin/claude-office-hook" ]; then
+  python3 - "$HOME/.claude/settings.json" "$HOME/.local/bin/claude-office-hook" <<'EOF'
+import sys
+p, full = sys.argv[1:3]
+s = open(p).read()
+open(p, "w").write(s.replace('"claude-office-hook ', f'"{full} '))
+EOF
+  echo "훅 명령을 전체 경로로 적었어요(~/.local/bin 이 PATH 에 없어서)"
+fi
 CFG=~/.claude/claude-office-config.env
 # 캐릭터 이름을 짧게: Claude Code 는 폴더 경로의 영문·숫자 밖 글자를 '-' 로 바꿔 이름 짓는다
 python3 - "$CFG" "$HOME" <<'EOF'
