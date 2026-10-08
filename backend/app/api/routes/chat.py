@@ -64,9 +64,21 @@ def _roots() -> list[Path]:
     return [Path.home() / "orca/projects", Path.home() / "src"]
 
 
+SCRATCH_NAME = "빈 대화"
+
+
+def _scratch() -> Path:
+    """레포와 상관없이 그냥 물어보는 대화용 빈 폴더(맨 앞에 둔다)."""
+    return Path.home() / ".claude-office/scratch"
+
+
 def _folders() -> list[dict[str, str]]:
-    """뿌리 바로 아래 폴더만(숨김 제외). 자유 입력 경로는 받지 않는다."""
+    """빈 대화 폴더 + 뿌리 바로 아래 폴더만(숨김 제외). 자유 입력 경로는 받지 않는다."""
     out: list[dict[str, str]] = []
+    scratch = _scratch()
+    with contextlib.suppress(OSError):
+        scratch.mkdir(parents=True, exist_ok=True)
+        out.append({"name": SCRATCH_NAME, "path": str(scratch)})
     for root in _roots():
         try:
             children = sorted(root.iterdir(), key=lambda p: p.name)

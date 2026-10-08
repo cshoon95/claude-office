@@ -5,12 +5,14 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Session } from "@/hooks/useSessions";
-import { isClaudeSessionId, isNewKey, registerChatInput, useChatStore, type ChatMsg } from "./chatApi";
+import { focusChatInput, isClaudeSessionId, isNewKey, registerChatInput, useChatStore, type ChatMsg } from "./chatApi";
 
 const LIVE_CONFIRM =
   "이 세션은 지금 Orca/터미널에 열려 있을 수 있어요. 같이 쓰면 대화가 갈라질 수 있어요. 보낼까요?";
 const EMPTY: ChatMsg[] = [];
 const HISTORY_POLL_MS = 3000;
+
+const SCRATCH = "빈 대화"; // 서버 /chat/folders 맨 앞(레포 없이 아무거나 물어보는 폴더)
 
 function folderName(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
@@ -107,6 +109,14 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
     [sessions],
   );
   const targetIsSession = !!target && !isNewKey(target);
+  const scratch = folders.find((f) => f.name === SCRATCH);
+  const isScratchTarget = !!scratch && target === `new:${scratch.path}`;
+  const startBlank = () => {
+    if (!scratch) return;
+    setTarget(`new:${scratch.path}`);
+    setCollapsed(false);
+    focusChatInput();
+  };
   const targetKnown = !target || isNewKey(target) || sessionOptions.some((s) => s.id === target);
 
   const submit = () => {
@@ -151,7 +161,7 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
           <optgroup label="새 대화">
             {folders.map((f) => (
               <option key={f.path} value={`new:${f.path}`}>
-                새 대화 · {f.name}
+                {f.name === SCRATCH ? "빈 대화 (레포 없이 아무거나)" : `새 대화 · ${f.name}`}
               </option>
             ))}
           </optgroup>
@@ -165,6 +175,17 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
             ))}
           </optgroup>
         </select>
+        {scratch && (
+          <button
+            type="button"
+            onClick={startBlank}
+            disabled={!!disabled}
+            className="shrink-0 rounded-md bg-sky-600 px-2 py-1 text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-40"
+            title="레포와 상관없이 새 대화"
+          >
+            ＋ 새 대화
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setCollapsed(!collapsed)}
@@ -187,7 +208,9 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
         <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto px-2 py-2 space-y-1.5">
           {messages.length === 0 && !disabled && (
             <div className="py-4 text-center text-xs text-slate-600">
-              {target && isNewKey(target)
+              {isScratchTarget
+                ? "아무거나 물어보세요 · /스킬 명령도 돼요"
+                : target && isNewKey(target)
                 ? `${folderName(target.slice(4))} 폴더에서 새로 시작해요`
                 : "말을 걸면 맥에서 Claude 가 일해요"}
             </div>

@@ -107,7 +107,7 @@ async def test_kill_switch_off(env: Path, client: httpx.AsyncClient) -> None:
 async def test_folders_allowlist(env: Path, client: httpx.AsyncClient) -> None:
     r = await client.get("/api/v1/chat/folders", headers=H)
     assert r.status_code == 200
-    assert [f["name"] for f in r.json()] == ["projects/alpha", "src/beta"]
+    assert [f["name"] for f in r.json()] == ["빈 대화", "projects/alpha", "src/beta"]
 
 
 async def test_csrf_header_and_origin(env: Path, client: httpx.AsyncClient) -> None:

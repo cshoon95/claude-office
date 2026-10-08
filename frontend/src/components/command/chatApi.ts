@@ -381,10 +381,7 @@ export function registerChatInput(el: HTMLTextAreaElement | null): void {
   inputEl = el;
 }
 
-export function chatWith(sessionId: string): void {
-  const s = useChatStore.getState();
-  s.setTarget(sessionId);
-  s.setCollapsed(false);
+export function focusChatInput(): void {
   const focus = () => {
     if (!inputEl) return;
     inputEl.focus({ preventScroll: true });
@@ -392,4 +389,11 @@ export function chatWith(sessionId: string): void {
   };
   focus();
   requestAnimationFrame(focus);
+}
+
+export function chatWith(sessionId: string): void {
+  const s = useChatStore.getState();
+  s.setTarget(sessionId);
+  s.setCollapsed(false);
+  focusChatInput();
 }
