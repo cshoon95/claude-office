@@ -152,6 +152,8 @@ export function useCommandCenterPeers(sessions: Session[]): CommandCenterPeers {
       ended: [],
     };
     const seen = new Set<string>();
+    // (로컬 커스텀) 조용해서 휴식 칸으로 옮긴 세션도 터미널은 열려 있다 — 합계에 넣는다
+    let resting = 0;
 
     // 1) Live entries from the overview feed.
     for (const e of entries) {
@@ -165,6 +167,7 @@ export function useCommandCenterPeers(sessions: Session[]): CommandCenterPeers {
             ? "ended"
             : e.bucket;
       seen.add(e.sessionId);
+      if (bucket === "ended" && session?.status === "active") resting++;
       byZone[bucket].push({
         activity: activityFor(e.sessionId, now),
         sessionId: e.sessionId,
@@ -232,7 +235,7 @@ export function useCommandCenterPeers(sessions: Session[]): CommandCenterPeers {
 
     // Combined cross-session totals (active terminals only).
     const summary: CommandSummary = {
-      terminals: counts.needs_you + counts.working + counts.done,
+      terminals: counts.needs_you + counts.working + counts.done + resting,
       subagents: 0,
       todoDone: 0,
       todoTotal: 0,

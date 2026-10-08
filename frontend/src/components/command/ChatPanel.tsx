@@ -114,7 +114,10 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
   const collapsed = useChatStore((s) => s.collapsed);
   const history = useChatStore((s) => (s.target ? s.histories[s.target] : undefined)) ?? EMPTY;
   const { setTarget, setCollapsed, loadFolders, loadHistory, send, stop } = useChatStore.getState();
-  const [draft, setDraft] = useState("");
+  // 쓰던 글은 대상마다 따로 — 캐릭터를 눌러 대상이 바뀌어도 다른 세션으로 보내지지 않게
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draft = drafts[target ?? ""] ?? "";
+  const setDraft = (v: string) => setDrafts((d) => ({ ...d, [target ?? ""]: v }));
   const [caret, setCaret] = useState(0);
   const [pick, setPick] = useState(0);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -166,11 +169,16 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
   const running = conv?.running ?? false;
   // 지난 대화(기록 파일) + 여기서 보낸 것 중 기록에 아직 안 들어간 것.
   // --resume 실행도 같은 기록 파일에 쌓이므로, 기록의 마지막 시각 이후 것만 덧붙인다.
+  // 서버가 스트림을 읽은 시각(로컬 ts)은 기록 파일 시각보다 조금 늦어서, 시각만 보면
+  // 기록의 마지막 말·도구 줄이 한 번 더 붙는다 — 마지막 질문 이후 기록에 이미 있는 건 뺀다.
   const messages = useMemo(() => {
     const local = conv?.messages ?? EMPTY;
     if (!history.length) return local;
     const last = history[history.length - 1].ts;
-    return [...history, ...local.filter((m) => m.ts > last)];
+    let turn = history.length - 1;
+    while (turn > 0 && history[turn].kind !== "user") turn--;
+    const inHistory = new Set(history.slice(turn).map((m) => `${m.kind}\u0000${m.text}`));
+    return [...history, ...local.filter((m) => m.ts > last && !inHistory.has(`${m.kind}\u0000${m.text}`))];
   }, [history, conv?.messages]);
 
   // ↑/↓ 로 이 대화에서 보낸 프롬프트 다시 불러오기(터미널처럼). 최신 것부터, 연속 중복은 하나로

@@ -29,7 +29,6 @@ export interface Conversation {
   running: boolean;
   lastSeq: number;
   updated: number;
-  bornHere?: boolean; // 이 채팅창에서 새로 시작한 세션(터미널에 열려 있을 리 없음)
 }
 
 export interface ChatFolder {
@@ -60,10 +59,8 @@ interface ChatStore {
   disabled: string | null; // 서버 스위치가 꺼져 있을 때의 안내
   error: string | null;
   collapsed: boolean;
-  confirmed: Record<string, true>; // 터미널과 같이 써도 된다고 한 번 확인받은 세션
   histories: Record<string, ChatMsg[]>; // 터미널·Orca 에서 나눈 지난 대화(저장 안 함, 서버에서 다시 읽음)
   loadHistory: (sessionId: string) => Promise<void>;
-  confirm: (sessionId: string) => void;
   setTarget: (key: string) => void;
   setCollapsed: (v: boolean) => void;
   loadFolders: () => Promise<void>;
@@ -177,7 +174,6 @@ export const useChatStore = create<ChatStore>()((set, get) => {
     const merged: Conversation = {
       ...old,
       key: sessionId,
-      bornHere: true,
       messages: [...(conversations[sessionId]?.messages ?? []), ...old.messages],
     };
     const next = { ...conversations, [sessionId]: merged };
@@ -267,7 +263,6 @@ export const useChatStore = create<ChatStore>()((set, get) => {
     disabled: null,
     error: null,
     collapsed: saved.collapsed,
-    confirmed: {},
     histories: {},
 
     loadHistory: async (sessionId) => {
@@ -282,8 +277,6 @@ export const useChatStore = create<ChatStore>()((set, get) => {
         // 기록을 못 읽어도 채팅은 된다
       }
     },
-
-    confirm: (sessionId) => set({ confirmed: { ...get().confirmed, [sessionId]: true } }),
 
     setTarget: (key) => {
       set({ target: key, error: null });

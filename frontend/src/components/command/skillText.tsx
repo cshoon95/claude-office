@@ -97,11 +97,9 @@ export function HighlightLayer({ text, known }: { text: string; known: Set<strin
 export function skillFromTool(summary: string): string | null {
   if (!summary.startsWith("Skill:")) return null;
   const rest = summary.slice(6).trim();
-  try {
-    const j = JSON.parse(rest) as { skill?: unknown };
-    if (typeof j.skill === "string") return j.skill;
-  } catch {
-    // JSON 이 아니면 그대로 이름
-  }
+  // 서버가 입력 JSON 을 200자에서 자르므로(args 가 길면) JSON.parse 대신 skill 값만 뽑는다
+  const m = /"skill":"((?:[^"\\]|\\.)*)"/.exec(rest);
+  if (m) return m[1];
+  if (rest.startsWith("{")) return null;
   return rest.split(/\s/)[0] || null;
 }

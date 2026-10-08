@@ -230,10 +230,34 @@ def _ts_ms(raw: Any) -> int:
         return 0
 
 
+# 화면이 3초마다 다시 읽는다 — 파일이 그대로면(경로·크기·수정 시각) 다시 파싱하지 않는다
+_HistSig = tuple[str, int, int]
+_HistRows = list[dict[str, Any]]
+_history_cache: "OrderedDict[tuple[str, int], tuple[_HistSig, _HistRows]]" = OrderedDict()
+HISTORY_CACHE_MAX = 16
+
+
 def read_history(session_id: str, limit: int = HISTORY_MAX) -> list[dict[str, Any]]:
     f = _transcript_file(session_id)
     if not f:
         return []
+    try:
+        st = os.stat(f)
+    except OSError:
+        return []
+    sig, ckey = (f, st.st_size, st.st_mtime_ns), (session_id, limit)
+    hit = _history_cache.get(ckey)
+    if hit and hit[0] == sig:
+        _history_cache.move_to_end(ckey)
+        return hit[1]
+    out = _parse_history(f, limit)
+    _history_cache[ckey] = (sig, out)
+    while len(_history_cache) > HISTORY_CACHE_MAX:
+        _history_cache.popitem(last=False)
+    return out
+
+
+def _parse_history(f: str, limit: int) -> list[dict[str, Any]]:
     out: deque[dict[str, Any]] = deque(maxlen=limit)
     with open(f, encoding="utf-8", errors="replace") as fh:
         for n, line in enumerate(fh):
@@ -243,7 +267,13 @@ def read_history(session_id: str, limit: int = HISTORY_MAX) -> list[dict[str, An
                 d = _obj(json.loads(line))
             except json.JSONDecodeError:
                 continue
-            if d.get("isSidechain") or d.get("isMeta"):
+            # 압축 요약("This session is being continued…")은 사람이 친 말이 아니다
+            if (
+                d.get("isSidechain")
+                or d.get("isMeta")
+                or d.get("isCompactSummary")
+                or d.get("isVisibleInTranscriptOnly")
+            ):
                 continue
             t, msg, ts = d.get("type"), _obj(d.get("message")), _ts_ms(d.get("timestamp"))
             if t == "user":
