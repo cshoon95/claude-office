@@ -20,6 +20,7 @@ import { ZONE_BY_KEY, ZONE_ORDER } from "./layout";
 import { sessionMatchesFloor } from "./sessionMatchesFloor";
 import { ManualTaskModal } from "./ManualTaskModal";
 import { useManualStore } from "./manualApi";
+import { isClaudeSessionId, useChatStore } from "./chatApi";
 
 // (로컬 커스텀) 채팅은 localStorage 에서 대화를 되살리므로 클라이언트에서만 그린다
 const ChatPanel = dynamic(
@@ -89,6 +90,12 @@ export function CommandCenterView({
   const handlePeerActivate = useCallback(
     (peer: CommandPeer, screen: { x: number; y: number }) => {
       setPopup({ peer, x: screen.x, y: screen.y });
+      // (로컬 커스텀) 누른 세션의 대화를 아래 채팅창에 바로 띄운다
+      if (isClaudeSessionId(peer.sessionId)) {
+        const chat = useChatStore.getState();
+        if (chat.target !== peer.sessionId) chat.setTarget(peer.sessionId);
+        chat.setCollapsed(false);
+      }
     },
     [],
   );

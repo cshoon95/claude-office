@@ -61,6 +61,8 @@ interface ChatStore {
   error: string | null;
   collapsed: boolean;
   confirmed: Record<string, true>; // 터미널과 같이 써도 된다고 한 번 확인받은 세션
+  histories: Record<string, ChatMsg[]>; // 터미널·Orca 에서 나눈 지난 대화(저장 안 함, 서버에서 다시 읽음)
+  loadHistory: (sessionId: string) => Promise<void>;
   confirm: (sessionId: string) => void;
   setTarget: (key: string) => void;
   setCollapsed: (v: boolean) => void;
@@ -266,13 +268,30 @@ export const useChatStore = create<ChatStore>()((set, get) => {
     error: null,
     collapsed: saved.collapsed,
     confirmed: {},
+    histories: {},
+
+    loadHistory: async (sessionId) => {
+      if (!isClaudeSessionId(sessionId)) return;
+      try {
+        const h = await call<ChatMsg[]>("GET", `/history?session_id=${encodeURIComponent(sessionId)}`);
+        const prev = get().histories[sessionId];
+        // 바뀐 게 없으면 다시 그리지 않는다
+        if (prev && prev.length === h.length && prev[prev.length - 1]?.id === h[h.length - 1]?.id) return;
+        set({ histories: { ...get().histories, [sessionId]: h } });
+      } catch {
+        // 기록을 못 읽어도 채팅은 된다
+      }
+    },
 
     confirm: (sessionId) => set({ confirmed: { ...get().confirmed, [sessionId]: true } }),
 
     setTarget: (key) => {
       set({ target: key, error: null });
       save(key, get().conversations);
-      if (!isNewKey(key)) void get().attachRunning(key);
+      if (!isNewKey(key)) {
+        void get().attachRunning(key);
+        void get().loadHistory(key);
+      }
     },
 
     setCollapsed: (v) => {

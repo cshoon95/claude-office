@@ -10,6 +10,7 @@ import { isClaudeSessionId, isNewKey, registerChatInput, useChatStore, type Chat
 const LIVE_CONFIRM =
   "이 세션은 지금 Orca/터미널에 열려 있을 수 있어요. 같이 쓰면 대화가 갈라질 수 있어요. 보낼까요?";
 const EMPTY: ChatMsg[] = [];
+const HISTORY_POLL_MS = 3000;
 
 function folderName(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
@@ -63,7 +64,8 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
   const disabled = useChatStore((s) => s.disabled);
   const error = useChatStore((s) => s.error);
   const collapsed = useChatStore((s) => s.collapsed);
-  const { setTarget, setCollapsed, loadFolders, send, stop } = useChatStore.getState();
+  const history = useChatStore((s) => (s.target ? s.histories[s.target] : undefined)) ?? EMPTY;
+  const { setTarget, setCollapsed, loadFolders, loadHistory, send, stop } = useChatStore.getState();
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -71,8 +73,23 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
     void loadFolders();
   }, [loadFolders]);
 
-  const messages = conv?.messages ?? EMPTY;
   const running = conv?.running ?? false;
+  // 지난 대화(기록 파일) + 여기서 보낸 것 중 기록에 아직 안 들어간 것.
+  // --resume 실행도 같은 기록 파일에 쌓이므로, 기록의 마지막 시각 이후 것만 덧붙인다.
+  const messages = useMemo(() => {
+    const local = conv?.messages ?? EMPTY;
+    if (!history.length) return local;
+    const last = history[history.length - 1].ts;
+    return [...history, ...local.filter((m) => m.ts > last)];
+  }, [history, conv?.messages]);
+
+  // 세션을 보고 있는 동안 기록을 3초마다 새로 읽는다(터미널에서 진행 중인 대화도 따라 보이게)
+  useEffect(() => {
+    if (!target || isNewKey(target) || collapsed) return;
+    void loadHistory(target);
+    const t = setInterval(() => void loadHistory(target), HISTORY_POLL_MS);
+    return () => clearInterval(t);
+  }, [target, collapsed, loadHistory]);
 
   // 새 메시지가 오면 맨 아래로
   useEffect(() => {

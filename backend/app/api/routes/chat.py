@@ -14,13 +14,15 @@ import contextlib
 import glob
 import json
 import os
+import re
 import shutil
 import signal
 import time
 import uuid
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, cast
 from urllib.parse import urlparse
@@ -169,6 +171,88 @@ def _transcript_cwd(session_id: str) -> str | None:
         except OSError:
             continue
     return None
+
+
+# ---------------------------------------------------------------------------
+# 지난 대화(터미널·Orca 에서 나눈 것) — 대화 기록 파일을 화면용 메시지로
+# ---------------------------------------------------------------------------
+
+HISTORY_MAX = 300
+_REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+_TAG_RE = re.compile(r"<(command-name|bash-input)>(.*?)</\1>", re.S)
+
+
+def _transcript_file(session_id: str) -> str | None:
+    base = Path(os.environ.get("CLAUDE_OFFICE_CLAUDE_PROJECTS") or Path.home() / ".claude/projects")
+    files = glob.glob(str(base / "*" / f"{session_id}.jsonl"))
+    return max(files, key=os.path.getmtime) if files else None
+
+
+def _user_text(content: Any) -> str | None:
+    """사람이 친 말만. 도구 결과·명령 출력은 None(건너뜀)."""
+    if isinstance(content, str):
+        s = content
+    else:
+        items = _items(content)
+        if any(c.get("type") == "tool_result" for c in items):
+            return None
+        parts = [str(c.get("text", "")) for c in items if c.get("type") == "text"]
+        if any(c.get("type") == "image" for c in items):
+            parts.append("[이미지]")
+        s = "\n".join(parts)
+    s = _REMINDER_RE.sub("", s).strip()
+    if s.startswith(
+        ("<local-command-stdout", "<bash-stdout", "<local-command-caveat", "<task-notification")
+    ):
+        return None
+    m = _TAG_RE.search(s)
+    if m:  # 슬래시 명령·! 명령은 한 줄로
+        s = (m.group(2) if m.group(1) == "command-name" else f"! {m.group(2)}").strip()
+    return s or None
+
+
+def _ts_ms(raw: Any) -> int:
+    try:
+        return int(datetime.fromisoformat(str(raw).replace("Z", "+00:00")).timestamp() * 1000)
+    except ValueError:
+        return 0
+
+
+def read_history(session_id: str, limit: int = HISTORY_MAX) -> list[dict[str, Any]]:
+    f = _transcript_file(session_id)
+    if not f:
+        return []
+    out: deque[dict[str, Any]] = deque(maxlen=limit)
+    with open(f, encoding="utf-8", errors="replace") as fh:
+        for n, line in enumerate(fh):
+            if '"user"' not in line and '"assistant"' not in line:
+                continue
+            try:
+                d = _obj(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+            if d.get("isSidechain") or d.get("isMeta"):
+                continue
+            t, msg, ts = d.get("type"), _obj(d.get("message")), _ts_ms(d.get("timestamp"))
+            if t == "user":
+                text = _user_text(msg.get("content"))
+                if text:
+                    out.append({"id": f"h:{n}", "kind": "user", "text": text[:TEXT_MAX], "ts": ts})
+            elif t == "assistant":
+                for i, c in enumerate(_items(msg.get("content"))):
+                    if c.get("type") == "text" and str(c.get("text", "")).strip():
+                        out.append(
+                            {
+                                "id": f"h:{n}:{i}",
+                                "kind": "text",
+                                "text": str(c["text"])[:TEXT_MAX],
+                                "ts": ts,
+                            }
+                        )
+                    elif c.get("type") == "tool_use":
+                        summary = _tool_summary(str(c.get("name", "")), c.get("input"))
+                        out.append({"id": f"h:{n}:{i}", "kind": "tool", "text": summary, "ts": ts})
+    return list(out)
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +498,15 @@ class RunCreate(BaseModel):
 @router.get("/folders")
 async def list_folders() -> list[dict[str, str]]:
     return _folders()
+
+
+@router.get("/history")
+async def get_history(session_id: str, limit: int = HISTORY_MAX) -> list[dict[str, Any]]:
+    try:
+        sid = str(uuid.UUID(session_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="세션 id 형식이 아니에요") from None
+    return await asyncio.to_thread(read_history, sid, max(1, min(limit, HISTORY_MAX)))
 
 
 @router.post("/runs")
