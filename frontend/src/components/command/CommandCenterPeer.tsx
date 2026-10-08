@@ -408,8 +408,10 @@ function CommandCenterPeerComponent({
   // 말풍선 문구
   // (로컬 커스텀) 말풍선은 항상 마지막 질문 — 쉬는 중·심부름 중에도
   const lastAsk = cleanTask(peer.currentTask);
+  // (로컬 커스텀) 대기 중이면 Claude 가 묻는 질문 첫 줄을 말풍선에
+  const askLine = peer.pendingQuestion?.split("\n")[0]?.trim();
   const bubble = isNeedsYou
-    ? "❓ 확인 필요"
+    ? `❓ ${askLine || "확인 필요"}`
     : peer.bucket === "working"
       ? shortTask(peer.currentTask)
       : peer.bucket === "ended"
@@ -423,7 +425,13 @@ function CommandCenterPeerComponent({
             : walking
               ? ""
               : "😌 휴식 중";
-  const lines = bubble ? wrap3(bubble) : [];
+  // (로컬 커스텀) 휴식 칸은 말풍선이 겹치니 기본은 숨기고, 올려 두거나 탭한 뒤 4초만 보인다
+  const [hovered, setHovered] = useState(false);
+  const [tapShown, setTapShown] = useState(false);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (tapTimer.current) clearTimeout(tapTimer.current); }, []);
+  const hideRestBubble = peer.bucket === "ended" && !hovered && !tapShown;
+  const lines = bubble && !hideRestBubble ? wrap3(bubble) : [];
   const maxLen = lines.reduce((m, l) => Math.max(m, Array.from(l).length), 0);
   const bubbleW = Math.max(90, maxLen * 26 + 36); // 2x 단위(0.5 배율 컨테이너)
   const bubbleH = lines.length * 32 + 22;
@@ -538,9 +546,16 @@ function CommandCenterPeerComponent({
       // DOM client coords so the popover lands under the cursor.
       const p = e.client ?? e.global ?? { x: 0, y: 0 };
       onActivate(peer, { x: p.x, y: p.y });
+      if (peer.bucket === "ended") {
+        setTapShown(true);
+        if (tapTimer.current) clearTimeout(tapTimer.current);
+        tapTimer.current = setTimeout(() => setTapShown(false), 4000);
+      }
     },
     [onActivate, peer],
   );
+  const handleOver = useCallback(() => setHovered(true), []);
+  const handleOut = useCallback(() => setHovered(false), []);
 
   const paTexture = paTex ? paTex[0] : null; // 실제 프레임은 tick 에서 바꾼다
 
@@ -554,6 +569,8 @@ function CommandCenterPeerComponent({
       eventMode="static"
       cursor="pointer"
       onPointerTap={handleTap}
+      onPointerOver={handleOver}
+      onPointerOut={handleOut}
     >
       <pixiGraphics draw={drawShadow} />
 

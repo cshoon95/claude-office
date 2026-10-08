@@ -39,6 +39,8 @@ export interface CommandPeer {
   todoDone: number;
   todoTotal: number;
   subagentCount: number;
+  /** (로컬 커스텀) 대기 중일 때 Claude 가 묻는 질문(첫 줄 질문 + 선택지 줄) */
+  pendingQuestion: string | null;
   slotIndex: number;
   /** Static slot position (Phase B). Walking between slots lands in Phase C. */
   position: Position;
@@ -178,6 +180,7 @@ export function useCommandCenterPeers(sessions: Session[]): CommandCenterPeers {
         todoDone: e.todoDone ?? 0,
         todoTotal: e.todoTotal ?? 0,
         subagentCount: e.subagentCount ?? 0,
+        pendingQuestion: e.pendingQuestion ?? null,
       });
     }
 
@@ -197,6 +200,7 @@ export function useCommandCenterPeers(sessions: Session[]): CommandCenterPeers {
         todoDone: 0,
         todoTotal: 0,
         subagentCount: 0,
+        pendingQuestion: null,
       });
     }
 

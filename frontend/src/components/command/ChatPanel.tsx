@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Session } from "@/hooks/useSessions";
+import { useOverviewStore } from "@/stores/overviewStore";
 import {
   fetchSkills,
   focusChatInput,
@@ -114,6 +115,11 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
   const collapsed = useChatStore((s) => s.collapsed);
   const history = useChatStore((s) => (s.target ? s.histories[s.target] : undefined)) ?? EMPTY;
   const { setTarget, setCollapsed, loadFolders, loadHistory, send, stop } = useChatStore.getState();
+  // (로컬 커스텀) 이 세션이 확인 필요 칸에서 Claude 가 묻고 있는 질문
+  const pendingQuestion = useOverviewStore((s) => {
+    const e = s.entries.find((x) => x.sessionId === target);
+    return e?.bucket === "needs_you" ? e.pendingQuestion ?? null : null;
+  });
   // 쓰던 글은 대상마다 따로 — 캐릭터를 눌러 대상이 바뀌어도 다른 세션으로 보내지지 않게
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const draft = drafts[target ?? ""] ?? "";
@@ -364,6 +370,15 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
             {targetIsSession && (
               <span className="ml-auto shrink-0 text-amber-400/70">터미널 창엔 여기서 한 말이 안 보여요</span>
             )}
+          </div>
+        )}
+
+        {/* (로컬 커스텀) Claude 가 묻는 중이면 질문을 메시지 위에 */}
+        {pendingQuestion && (
+          <div className="shrink-0 max-h-32 overflow-y-auto border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-100">
+            <div className="font-bold text-amber-300">❓ Claude 가 묻고 있어요</div>
+            <div className="whitespace-pre-wrap break-words">{pendingQuestion}</div>
+            <div className="mt-0.5 text-[10px] text-amber-400/70">답은 터미널에서 하거나, 여기서 보내면 이어서 전달돼요</div>
           </div>
         )}
 

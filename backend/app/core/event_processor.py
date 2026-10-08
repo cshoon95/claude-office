@@ -21,6 +21,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.config import get_settings
+from app.core import notifier
 from app.core.beads_poller import get_beads_poller, has_beads, init_beads_poller
 from app.core.broadcast_service import (
     broadcast_error,
@@ -49,7 +50,7 @@ from app.core.handlers import (
 )
 from app.core.jsonl_parser import get_last_assistant_response
 from app.core.product_mapper import get_product_mapper
-from app.core.room_orchestrator import RoomOrchestrator
+from app.core.room_orchestrator import RoomOrchestrator, overview_bucket
 from app.core.state_machine import StateMachine
 from app.core.task_file_poller import init_task_file_poller
 from app.core.task_persistence import load_tasks, save_tasks
@@ -647,6 +648,17 @@ class EventProcessor:
         # event. No-op when no one is watching /ws/overview.
         # ------------------------------------------------------------------
         self._schedule_overview_broadcast()
+
+        # (로컬 커스텀) "확인 필요"로 들어가면 휴대폰 푸시(ntfy). 토픽 없으면 아무것도 안 한다.
+        notifier.on_session_update(
+            event.session_id,
+            overview_bucket(sm),
+            name=derive_display_name(
+                working_dir=event.data.project_dir or event.data.working_dir,
+                project_name=event.data.project_name,
+            ),
+            pending_question=sm.boss_pending_question,
+        )
 
     # ------------------------------------------------------------------
     # Command Center overview (debounced cross-session broadcast)

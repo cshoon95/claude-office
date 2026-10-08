@@ -62,7 +62,7 @@ _BOSS_TO_BUCKET: dict[BossState, OverviewBucket] = {
 }
 
 
-def _overview_bucket(sm: StateMachine) -> OverviewBucket:
+def overview_bucket(sm: StateMachine) -> OverviewBucket:
     """Pick the Command Center zone for a session, smoothing out flicker.
 
     The boss drops to ``IDLE`` in the brief gap *between* tool calls and right
@@ -331,12 +331,13 @@ def build_overview(sessions: dict[str, StateMachine]) -> OverviewState:
         entries.append(
             OverviewEntry(
                 session_id=session_id,
-                bucket=_overview_bucket(sm),
+                bucket=overview_bucket(sm),
                 state=sm.boss_state,
                 current_task=sm.boss_current_task,
                 todo_done=todo_done,
                 todo_total=todo_total,
                 subagent_count=len(list(sm.agents)),
+                pending_question=sm.boss_pending_question,
             )
         )
     return OverviewState(entries=entries, last_updated=datetime.now(UTC))

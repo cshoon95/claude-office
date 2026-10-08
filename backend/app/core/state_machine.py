@@ -230,6 +230,32 @@ def _handle_context_compaction(sm: "StateMachine", event: AnyEvent) -> None:
 
 
 ASKS_USER = frozenset({"AskUserQuestion", "ExitPlanMode"})
+_CIRCLED = "①②③④"
+_PENDING_MAX = 300
+
+
+def build_pending_question(tool_name: str | None, tool_input: dict[str, Any] | None) -> str:
+    """(로컬 커스텀) 나한테 묻는 내용을 한두 줄로 — Command Center 카드·휴대폰 알림용."""
+    if tool_name == "ExitPlanMode":
+        return "📋 계획 승인 요청"
+    questions = cast(list[Any], (tool_input or {}).get("questions") or [])
+    first = cast(
+        dict[str, Any], questions[0] if questions and isinstance(questions[0], dict) else {}
+    )
+    text = str(first.get("question") or first.get("header") or "질문이 있어요").strip()
+    options = cast(list[Any], first.get("options") or [])
+    labels: list[str] = [
+        str(cast(dict[str, Any], o)["label"]).strip()
+        for o in options[: len(_CIRCLED)]
+        if isinstance(o, dict) and cast(dict[str, Any], o).get("label")
+    ]
+    if labels:
+        text += "\n" + "  ".join(f"{_CIRCLED[i]} {lb}" for i, lb in enumerate(labels))
+    if len(questions) > 1:
+        text += f" (+{len(questions) - 1}개 질문 더)"
+    if len(text) > _PENDING_MAX:
+        text = text[: _PENDING_MAX - 1] + "…"
+    return text
 
 
 def _handle_pre_tool_use(sm: "StateMachine", event: AnyEvent) -> None:
@@ -254,9 +280,11 @@ def _handle_pre_tool_use(sm: "StateMachine", event: AnyEvent) -> None:
             # (로컬 커스텀) 작업 중에 나한테 묻는 것(선택지 질문·계획 승인) → "확인 필요" 칸
             sm.boss_bubble = BubbleContent(type=BubbleType.THOUGHT, text="확인 필요", icon="❓")
             sm.boss_state = BossState.WAITING_PERMISSION
+            sm.boss_pending_question = build_pending_question(tool_name, event.data.tool_input)
         elif agent_id == "main":
             sm.boss_bubble = bubble
             sm.boss_state = BossState.WORKING
+            sm.boss_pending_question = None
         else:
             if agent_id not in sm.agents and len(sm.agents) < sm.MAX_AGENTS:
                 new_agent = sm.create_agent(
@@ -280,6 +308,7 @@ def _handle_user_prompt_submit(sm: "StateMachine", event: AnyEvent) -> None:
     """Handle USER_PROMPT_SUBMIT: boss receives a new user prompt."""
     assert isinstance(event, PromptEvent)
     sm.boss_state = BossState.RECEIVING
+    sm.boss_pending_question = None
     prompt_text = event.data.prompt
     sm.print_report = False
     sm.turn_active = True
@@ -308,6 +337,7 @@ def _handle_permission_request(sm: "StateMachine", event: AnyEvent) -> None:
     if agent_id == "main":
         sm.boss_state = BossState.WAITING_PERMISSION
         sm.boss_bubble = waiting_bubble
+        sm.boss_pending_question = f"🔐 권한 요청: {tool_name}"
     else:
         if agent_id in sm.agents:
             sm.agents[agent_id].state = AgentState.WAITING_PERMISSION
@@ -320,6 +350,7 @@ def _handle_post_tool_use(sm: "StateMachine", event: AnyEvent) -> None:
     agent_id = event.data.agent_id or "main"
     if agent_id == "main":
         sm.boss_state = BossState.IDLE
+        sm.boss_pending_question = None
     elif agent_id in sm.agents and sm.agents[agent_id].state == AgentState.WAITING_PERMISSION:
         sm.agents[agent_id].state = AgentState.WORKING
 
@@ -402,6 +433,7 @@ def _handle_stop(sm: "StateMachine", event: AnyEvent) -> None:
     sm.phase = OfficePhase.COMPLETING
     sm.boss_state = BossState.COMPLETING
     sm.turn_active = False
+    sm.boss_pending_question = None
 
     speech_text = (
         event.data.speech_content.boss_phone
@@ -424,6 +456,7 @@ def _handle_session_end(sm: "StateMachine", event: AnyEvent) -> None:
     sm.boss_state = BossState.IDLE
     sm.boss_current_task = None
     sm.turn_active = False
+    sm.boss_pending_question = None
 
 
 def _handle_background_task_notification(sm: "StateMachine", event: AnyEvent) -> None:
@@ -565,6 +598,8 @@ class StateMachine:
     boss_state: BossState = BossState.IDLE
     boss_bubble: BubbleContent | None = None
     boss_current_task: str | None = None  # Summarized user prompt
+    # (로컬 커스텀) 보스가 나한테 묻고 있는 내용(질문+선택지 / 계획 승인 / 권한 요청)
+    boss_pending_question: str | None = None
     elevator_state: ElevatorState = ElevatorState.CLOSED
     agents: dict[str, Agent] = field(default_factory=_empty_agents)
     arrival_queue: list[str] = field(default_factory=_empty_str_list)

@@ -132,6 +132,13 @@ export function PeerPopup({
           </span>
         </div>
 
+        {/* (로컬 커스텀) Claude 가 묻고 있는 질문(선택지 포함) */}
+        {peer.bucket === "needs_you" && peer.pendingQuestion && (
+          <div className="mb-3 rounded-lg border border-amber-500/60 bg-amber-500/15 px-2.5 py-2 text-[12px] text-amber-100 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+            {peer.pendingQuestion}
+          </div>
+        )}
+
         <div className="text-[12px] text-neutral-400 space-y-1 mb-3">
           <div>
             <span className="text-neutral-600">

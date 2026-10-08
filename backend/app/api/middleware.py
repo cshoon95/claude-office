@@ -42,14 +42,21 @@ LAN_PUBLIC_PATHS = frozenset(
 )
 
 
+# (로컬 커스텀) Tailscale: 밖에서도 내 기기끼리만 붙는 사설망. 100.64.0.0/10(CGNAT)은
+# 파이썬 is_private 에 안 잡히므로 따로 둔다. MagicDNS 이름은 *.ts.net.
+_TAILSCALE_NETS = (_ip.ip_network("100.64.0.0/10"), _ip.ip_network("fd7a:115c:a1e0::/48"))
+
+
 def is_lan_host(host: str | None) -> bool:
-    """LAN 모드일 때 사설 IP(또는 *.local 이름)인가. 루프백은 False(따로 처리)."""
+    """LAN 모드일 때 사설 IP·Tailscale IP(또는 *.local·*.ts.net 이름)인가. 루프백은 False."""
     if not ALLOW_LAN or not host:
         return False
     try:
         a = _ip.ip_address(host)
     except ValueError:
-        return host.endswith(".local")
+        return host.endswith((".local", ".ts.net"))
+    if any(a in net for net in _TAILSCALE_NETS):
+        return True
     return a.is_private and not a.is_loopback
 
 

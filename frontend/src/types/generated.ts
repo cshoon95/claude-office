@@ -982,6 +982,7 @@ export interface OverviewEntry {
   todoDone?: Tododone;
   todoTotal?: Todototal;
   subagentCount?: Subagentcount;
+  pendingQuestion?: string | null;
   [k: string]: unknown;
 }
 /**

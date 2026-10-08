@@ -28,6 +28,8 @@ const ChatPanel = dynamic(
   { ssr: false },
 );
 
+const DEFAULT_TITLE = "Claude Office Visualizer";
+
 function CommandCenterLoading(): ReactNode {
   const { t } = useTranslation();
   return (
@@ -76,6 +78,13 @@ export function CommandCenterView({
   const connected = useOverviewStore(selectOverviewConnected);
 
   const { peers, counts, overflow, summary } = useCommandCenterPeers(sessions);
+
+  // (로컬 커스텀) 확인 필요 수를 탭 제목에 — Pixel Office.app 이 읽어 독 배지로 띄운다
+  const needsYou = counts.needs_you ?? 0;
+  useEffect(() => {
+    document.title = needsYou > 0 ? `(${needsYou}) Pixel Office` : DEFAULT_TITLE;
+  }, [needsYou]);
+  useEffect(() => () => { document.title = DEFAULT_TITLE; }, []);
 
   const [popup, setPopup] = useState<PeerPopupState | null>(null);
   const [addOpen, setAddOpen] = useState(false);

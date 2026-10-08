@@ -41,6 +41,8 @@ class OverviewEntry(BaseModel):
     todo_done: int = 0
     todo_total: int = 0
     subagent_count: int = 0
+    # (로컬 커스텀) 보스가 묻는 내용(질문+선택지 등). 프론트 계약: pendingQuestion
+    pending_question: str | None = None
 
 
 class OverviewState(BaseModel):
