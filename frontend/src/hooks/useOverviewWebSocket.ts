@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { backendPort } from "@/utils/api";
 import { useOverviewStore } from "@/stores/overviewStore";
 import type { OverviewEntry } from "@/types";
 
@@ -48,7 +49,7 @@ export function useOverviewWebSocket({ enabled }: { enabled: boolean }): void {
     const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
     const wsUrl =
       process.env.NEXT_PUBLIC_WS_URL ||
-      `${wsScheme}://${window.location.hostname}:8000`;
+      `${wsScheme}://${window.location.hostname}:${backendPort()}`;
     const ws = new WebSocket(`${wsUrl}/ws/overview`);
     wsRef.current = ws;
 

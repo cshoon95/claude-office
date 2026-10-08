@@ -71,7 +71,12 @@ def validate_websocket_origin(websocket: WebSocket) -> bool:
 
     origin = websocket.headers.get("origin")
     if origin is not None:
-        return origin.rstrip("/") in _allowed_ws_origins()
+        if origin.rstrip("/") in _allowed_ws_origins():
+            return True
+        # (로컬 커스텀) 서버가 직접 서빙한 페이지(같은 주소)면 포트가 8000 이 아니어도 허용
+        parsed = urlparse(origin)
+        host = (websocket.headers.get("host") or "").lower()
+        return parsed.hostname in _LOCALHOST_HOSTS and parsed.netloc.lower() == host
 
     # Non-browser clients (no Origin) — always require the effective API key
     from app.config import get_settings

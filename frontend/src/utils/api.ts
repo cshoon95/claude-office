@@ -6,10 +6,17 @@
  * console; initApiKeyFromBrowser captures it into sessionStorage.
  */
 
+/** (로컬 커스텀) 백엔드 포트 = 지금 연 페이지의 포트(next dev :3000 일 때만 8000) — 8000 말고 다른 포트로 띄워도 동작 */
+export function backendPort(): string {
+  if (typeof window === "undefined") return "8000";
+  const p = window.location.port;
+  return !p || p === "3000" ? "8000" : p;
+}
+
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
   // (로컬 커스텀) 접속한 호스트의 :8000 — 휴대폰(LAN)·next dev(:3000) 모두 백엔드를 가리키게(WS 규칙과 동일)
-  (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:8000` : "http://localhost:8000");
+  (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:${backendPort()}` : "http://localhost:8000");
 
 const KEY_STORAGE = "claude-office-api-key";
 

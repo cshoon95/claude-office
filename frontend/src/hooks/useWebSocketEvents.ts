@@ -15,6 +15,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { backendPort } from "@/utils/api";
 import { useGameStore } from "@/stores/gameStore";
 import { useAttentionStore } from "@/stores/attentionStore";
 import { usePreferencesStore } from "@/stores/preferencesStore";
@@ -205,7 +206,7 @@ export function useWebSocketEvents({
     const baseUrl =
       process.env.NEXT_PUBLIC_WS_URL ||
       (typeof window !== "undefined"
-        ? `ws://${window.location.hostname}:8000`
+        ? `ws://${window.location.hostname}:${backendPort()}`
         : "ws://localhost:8000");
     controllerRef.current = new WebSocketController({
       sessionId,
