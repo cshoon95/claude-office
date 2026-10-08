@@ -25,7 +25,7 @@ const en = {
 
   // Command Center
   "commandCenter.title": "Command Center",
-  "commandCenter.zone.needsYou": "Needs you",
+  "commandCenter.zone.needsYou": "확인 필요",
   "commandCenter.zone.working": "Working",
   "commandCenter.zone.done": "Done",
   "commandCenter.zone.ended": "Ended",

@@ -229,6 +229,9 @@ def _handle_context_compaction(sm: "StateMachine", event: AnyEvent) -> None:
     )
 
 
+ASKS_USER = frozenset({"AskUserQuestion", "ExitPlanMode"})
+
+
 def _handle_pre_tool_use(sm: "StateMachine", event: AnyEvent) -> None:
     """Handle PRE_TOOL_USE: update boss/agent state and process TodoWrite events."""
     assert isinstance(event, ToolEvent)
@@ -247,7 +250,11 @@ def _handle_pre_tool_use(sm: "StateMachine", event: AnyEvent) -> None:
         agent_id = event.data.agent_id or "main"
 
         bubble = sm.tool_to_thought(event)
-        if agent_id == "main":
+        if agent_id == "main" and tool_name in ASKS_USER:
+            # (로컬 커스텀) 작업 중에 나한테 묻는 것(선택지 질문·계획 승인) → "확인 필요" 칸
+            sm.boss_bubble = BubbleContent(type=BubbleType.THOUGHT, text="확인 필요", icon="❓")
+            sm.boss_state = BossState.WAITING_PERMISSION
+        elif agent_id == "main":
             sm.boss_bubble = bubble
             sm.boss_state = BossState.WORKING
         else:

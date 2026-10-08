@@ -342,7 +342,7 @@ function CommandCenterPeerComponent({
   // (로컬 커스텀) 말풍선은 항상 마지막 질문 — 쉬는 중·심부름 중에도
   const lastAsk = cleanTask(peer.currentTask);
   const bubble = isNeedsYou
-    ? "🙋 답 기다려요"
+    ? "❓ 확인 필요"
     : peer.bucket === "working"
       ? shortTask(peer.currentTask)
       : peer.bucket === "ended"

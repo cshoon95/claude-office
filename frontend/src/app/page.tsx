@@ -46,8 +46,6 @@ import { FloorView } from "@/components/views/FloorView";
 import { CommandCenterView } from "@/components/command/CommandCenterView";
 import { TourOverlay } from "@/components/tour/TourOverlay";
 import CommandBar from "@/components/attention/CommandBar";
-import AttentionToasts from "@/components/attention/AttentionToasts";
-import AgentPopup from "@/components/attention/AgentPopup";
 import { useAttentionStore } from "@/stores/attentionStore";
 import { usePreferencesStore } from "@/stores/preferencesStore";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -580,8 +578,7 @@ export default function V2TestPage(): React.ReactNode {
           Attention System
       ---------------------------------------------------------------- */}
       <CommandBar />
-      <AttentionToasts />
-      <AgentPopup />
+      {/* (로컬 커스텀) 주황 알림 토스트·에이전트 팝업은 끔 — 상태는 Command Center 칸으로 충분 */}
 
       {/* ----------------------------------------------------------------
           Tour Overlay
