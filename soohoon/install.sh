@@ -57,6 +57,13 @@ echo "빌드 완료"
 step "④ Claude Code 연결(훅)"
 mkdir -p ~/.claude
 [ -f ~/.claude/settings.json.bak-before-claude-office ] || cp ~/.claude/settings.json ~/.claude/settings.json.bak-before-claude-office 2>/dev/null || true
+# 다시 설치할 때: 전에 전체 경로로 바꿔 둔 명령을 원래 이름으로 돌려놔야 훅 설치기가 중복을 알아본다
+[ -f ~/.claude/settings.json ] && python3 - "$HOME/.claude/settings.json" "$HOME/.local/bin/claude-office-hook" <<'EOF'
+import sys
+p, full = sys.argv[1:3]
+s = open(p).read()
+open(p, "w").write(s.replace(f'"{full} ', '"claude-office-hook '))
+EOF
 (cd hooks && ./install.sh >/dev/null) && echo "훅 설치 완료 (원래 설정 백업: ~/.claude/settings.json.bak-before-claude-office)"
 # ~/.local/bin 이 PATH 에 없으면 Claude Code 가 훅 명령을 못 찾는다 → 설정에 전체 경로로 적는다
 if ! command -v claude-office-hook >/dev/null && [ -x "$HOME/.local/bin/claude-office-hook" ]; then
