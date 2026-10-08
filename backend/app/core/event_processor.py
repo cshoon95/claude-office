@@ -1000,6 +1000,10 @@ class EventProcessor:
             elif is_session_end:
                 session_rec.status = "completed"
                 session_rec.updated_at = datetime.now(UTC)
+            elif session_rec.status != "active":
+                # (로컬 커스텀) 끝났다고 기록된 세션에서 다시 이벤트가 오면 살아난 것
+                # (/remote-control·--resume·재접속 등) — 퇴근 처리된 채로 남지 않게 되살린다
+                session_rec.status = "active"
 
             event_rec = EventRecord(
                 session_id=event.session_id,

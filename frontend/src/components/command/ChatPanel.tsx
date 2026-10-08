@@ -5,7 +5,17 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Session } from "@/hooks/useSessions";
-import { focusChatInput, isClaudeSessionId, isNewKey, registerChatInput, useChatStore, type ChatMsg } from "./chatApi";
+import {
+  fetchSkills,
+  focusChatInput,
+  isClaudeSessionId,
+  isNewKey,
+  registerChatInput,
+  useChatStore,
+  type ChatMsg,
+  type SkillInfo,
+} from "./chatApi";
+import { HighlightLayer, RichText, SkillChip, skillFromTool, usedSkills } from "./skillText";
 
 const LIVE_CONFIRM =
   "이 세션은 지금 Orca/터미널에 열려 있을 수 있어요. 같이 쓰면 대화가 갈라질 수 있어요. 보낼까요?";
@@ -23,40 +33,78 @@ function sessionTitle(s: Session): string {
   return s.projectName && s.projectName !== name ? `${name} · ${s.projectName}` : name;
 }
 
-function Message({ m }: { m: ChatMsg }): ReactNode {
+function Message({ m, known }: { m: ChatMsg; known: Set<string> | null }): ReactNode {
   switch (m.kind) {
     case "user":
       return (
-        <div className="flex justify-end">
-          <div className="max-w-[85%] rounded-lg rounded-br-sm bg-sky-700 px-3 py-2 text-sm text-white whitespace-pre-wrap break-words">
-            {m.text}
+        <div className="flex justify-end pl-8">
+          <div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-br from-sky-600 to-indigo-600 px-3.5 py-2 text-sm leading-relaxed text-white shadow-md shadow-indigo-950/40 whitespace-pre-wrap break-words">
+            <RichText text={m.text} known={known} />
           </div>
         </div>
       );
     case "text":
       return (
-        <div className="flex justify-start">
-          <div className="max-w-[92%] rounded-lg rounded-bl-sm bg-slate-800 px-3 py-2 text-sm text-slate-100 whitespace-pre-wrap break-words">
-            {m.text}
+        <div className="flex items-start gap-2 pr-6">
+          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500/15 text-[13px] text-orange-300 ring-1 ring-orange-400/40">
+            ✳
+          </span>
+          <div className="max-w-[92%] rounded-2xl rounded-tl-md border border-slate-700/60 bg-slate-800/70 px-3.5 py-2 text-sm leading-relaxed text-slate-100 whitespace-pre-wrap break-words">
+            <RichText text={m.text} known={known} />
           </div>
         </div>
       );
-    case "tool":
-      return <div className="truncate px-1 font-mono text-[11px] text-slate-500">🔧 {m.text}</div>;
+    case "tool": {
+      const skill = skillFromTool(m.text);
+      if (skill)
+        return (
+          <div className="ml-8 inline-flex items-center gap-1.5 rounded-md bg-violet-500/15 px-2 py-1 font-mono text-[11px] text-violet-200 ring-1 ring-violet-400/40">
+            ⚡ 스킬 실행 <b className="text-violet-100">/{skill}</b>
+          </div>
+        );
+      const i = m.text.indexOf(":");
+      const name = i > 0 ? m.text.slice(0, i) : m.text;
+      const arg = i > 0 ? m.text.slice(i + 1).trim() : "";
+      return (
+        <div className="ml-8 flex min-w-0 items-baseline gap-1.5 border-l-2 border-slate-700 pl-2 font-mono text-[11px]">
+          <span className="text-emerald-400/90">⏺</span>
+          <span className="shrink-0 font-semibold text-slate-300">{name}</span>
+          <span className="truncate text-slate-500">{arg}</span>
+        </div>
+      );
+    }
     case "tool_result":
       return (
-        <details className="px-1 font-mono text-[11px] text-slate-600">
-          <summary className="cursor-pointer select-none truncate">↳ {m.text.split("\n")[0]}</summary>
+        <details className="ml-8 pl-2 font-mono text-[11px] text-slate-600">
+          <summary className="cursor-pointer select-none truncate">⎿ {m.text.split("\n")[0]}</summary>
           <pre className="mt-1 whitespace-pre-wrap break-words text-slate-500">{m.text}</pre>
         </details>
       );
     case "status":
-      return <div className="text-center font-mono text-[10px] text-slate-600">— {m.text} —</div>;
+      return (
+        <div className="flex justify-center">
+          <span className="rounded-full bg-slate-800/80 px-2.5 py-0.5 font-mono text-[10px] text-slate-500">{m.text}</span>
+        </div>
+      );
     case "result":
-      return <div className="px-1 font-mono text-[11px] text-emerald-500/80">✓ {m.text}</div>;
+      return (
+        <div className="ml-8 inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-300/90 ring-1 ring-emerald-500/30">
+          ✓ {m.text}
+        </div>
+      );
     case "error":
-      return <div className="px-1 text-xs text-rose-400 whitespace-pre-wrap break-words">⚠ {m.text}</div>;
+      return (
+        <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-300 whitespace-pre-wrap break-words">
+          ⚠ {m.text}
+        </div>
+      );
   }
+}
+
+/** 커서 바로 앞이 "/글자" 면 그 글자(자동완성 검색어) */
+function slashQuery(text: string, caret: number): { q: string; start: number } | null {
+  const m = /(^|\s)\/([\w.:-]*)$/.exec(text.slice(0, caret));
+  return m ? { q: m[2].toLowerCase(), start: caret - m[2].length - 1 } : null;
 }
 
 export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
@@ -69,7 +117,48 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
   const history = useChatStore((s) => (s.target ? s.histories[s.target] : undefined)) ?? EMPTY;
   const { setTarget, setCollapsed, loadFolders, loadHistory, send, stop } = useChatStore.getState();
   const [draft, setDraft] = useState("");
+  const [caret, setCaret] = useState(0);
+  const [pick, setPick] = useState(0);
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+
+  // 쓸 수 있는 스킬(세션이면 그 폴더의 프로젝트 스킬까지)
+  const skillKey = target && !isNewKey(target) ? target : null;
+  useEffect(() => {
+    let alive = true;
+    fetchSkills(skillKey)
+      .then((l) => alive && setSkills(l))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [skillKey]);
+  const known = useMemo(() => (skills.length ? new Set(skills.map((k) => k.name)) : null), [skills]);
+
+  // "/" 자동완성
+  const sq = caret < 0 ? null : slashQuery(draft, caret);
+  const suggestions = useMemo(() => {
+    if (!sq) return [];
+    const q = sq.q;
+    const hit = skills.filter((k) => k.name.toLowerCase().includes(q));
+    hit.sort((a, b) => Number(!a.name.toLowerCase().startsWith(q)) - Number(!b.name.toLowerCase().startsWith(q)));
+    return hit.slice(0, 7);
+  }, [sq?.q, skills]); // eslint-disable-line react-hooks/exhaustive-deps
+  const showSuggest = suggestions.length > 0;
+  const choose = (name: string) => {
+    if (!sq) return;
+    const next = `${draft.slice(0, sq.start)}/${name} ${draft.slice(caret)}`;
+    const pos = sq.start + name.length + 2;
+    setDraft(next);
+    setPick(0);
+    requestAnimationFrame(() => {
+      inputRef.current?.setSelectionRange(pos, pos);
+      setCaret(pos);
+    });
+  };
+  const draftSkills = usedSkills(draft, known);
 
   useEffect(() => {
     void loadFolders();
@@ -135,6 +224,23 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showSuggest && !e.nativeEvent.isComposing) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const n = suggestions.length;
+        setPick((p) => (p + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        choose(suggestions[Math.min(pick, suggestions.length - 1)].name);
+        return;
+      }
+      if (e.key === "Escape") {
+        setCaret(-1);
+        return;
+      }
+    }
     if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
     // 휴대폰(터치)에선 Enter = 줄바꿈, 보내기는 버튼으로
     if (window.matchMedia("(pointer: coarse)").matches) return;
@@ -142,20 +248,29 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
     submit();
   };
 
+  const cwd =
+    conv?.cwd ??
+    (target && isNewKey(target) ? target.slice(4) : sessions.find((x) => x.id === target)?.projectRoot ?? null);
+
   return (
     <div
-      className={`flex flex-col flex-1 min-h-0 md:flex-none rounded-lg border border-slate-800 bg-slate-900 overflow-hidden ${
-        collapsed ? "md:h-auto" : "md:h-72"
+      className={`flex flex-col flex-1 min-h-0 md:flex-none overflow-hidden rounded-xl border border-slate-700/70 bg-[#0a0e17] shadow-2xl shadow-black/40 ring-1 ring-white/5 ${
+        collapsed ? "md:h-auto" : "md:h-80"
       }`}
     >
-      {/* 헤더: 대상 고르기 */}
-      <div className="flex items-center gap-2 border-b border-slate-800 px-2 py-1.5 shrink-0">
-        <span className="text-xs font-bold text-sky-400 whitespace-nowrap">💬 Claude</span>
+      {/* 제목줄: 신호등 + 대상 고르기 */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-slate-800 bg-gradient-to-b from-slate-800/80 to-slate-900/80 px-2.5 py-1.5">
+        <div className="hidden sm:flex items-center gap-1.5 pr-1">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+        </div>
+        <span className="whitespace-nowrap font-mono text-xs font-bold text-orange-300">✳ claude</span>
         <select
           value={target ?? ""}
           onChange={(e) => setTarget(e.target.value)}
           disabled={!!disabled}
-          className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-base md:text-xs text-white focus:border-sky-500 focus:outline-none"
+          className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950/70 px-2 py-1 font-mono text-base md:text-xs text-slate-100 focus:border-orange-400/70 focus:outline-none"
         >
           {!target && <option value="">대상을 고르세요</option>}
           <optgroup label="새 대화">
@@ -180,7 +295,7 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
             type="button"
             onClick={startBlank}
             disabled={!!disabled}
-            className="shrink-0 rounded-md bg-sky-600 px-2 py-1 text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-40"
+            className="shrink-0 rounded-md bg-orange-500/90 px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-orange-400 disabled:opacity-40"
             title="레포와 상관없이 새 대화"
           >
             ＋ 새 대화
@@ -197,30 +312,39 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
       </div>
 
       <div className={`flex flex-col flex-1 min-h-0 ${collapsed ? "md:hidden" : ""}`}>
-        {targetIsSession && (
-          <div className="shrink-0 border-b border-slate-800 px-3 py-1 text-[11px] text-amber-400/80">
-            Orca/터미널에 열린 창에는 이 대화가 안 보여요
-            {conv?.cwd ? <span className="text-slate-500"> · {folderName(conv.cwd)}</span> : null}
+        {/* 경로 줄 */}
+        {(cwd || targetIsSession) && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-slate-800/80 bg-slate-950/40 px-3 py-1 font-mono text-[11px]">
+            {cwd && <span className="truncate text-slate-400">📁 {cwd.replace(/^\/Users\/[^/]+/, "~")}</span>}
+            {targetIsSession && (
+              <span className="ml-auto shrink-0 text-amber-400/70">터미널 창엔 여기서 한 말이 안 보여요</span>
+            )}
           </div>
         )}
 
         {/* 메시지 */}
-        <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto px-2 py-2 space-y-1.5">
+        <div
+          ref={listRef}
+          className="flex-1 min-h-0 space-y-2 overflow-y-auto bg-[radial-gradient(ellipse_at_top,rgba(56,189,248,0.06),transparent_60%)] px-3 py-3"
+        >
           {messages.length === 0 && !disabled && (
-            <div className="py-4 text-center text-xs text-slate-600">
-              {isScratchTarget
-                ? "아무거나 물어보세요 · /스킬 명령도 돼요"
-                : target && isNewKey(target)
-                ? `${folderName(target.slice(4))} 폴더에서 새로 시작해요`
-                : "말을 걸면 맥에서 Claude 가 일해요"}
+            <div className="flex flex-col items-center gap-1 py-6 text-center">
+              <span className="text-2xl text-orange-300/80">✳</span>
+              <span className="text-xs text-slate-500">
+                {isScratchTarget
+                  ? "아무거나 물어보세요 · / 를 치면 스킬 목록이 나와요"
+                  : target && isNewKey(target)
+                  ? `${folderName(target.slice(4))} 폴더에서 새로 시작해요`
+                  : "말을 걸면 맥에서 Claude 가 일해요"}
+              </span>
             </div>
           )}
           {messages.map((m) => (
-            <Message key={m.id} m={m} />
+            <Message key={m.id} m={m} known={known} />
           ))}
           {running && (
-            <div className="flex items-center gap-2 px-1 text-xs text-sky-400">
-              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+            <div className="ml-8 flex items-center gap-2 font-mono text-xs text-orange-300">
+              <span className="inline-block animate-spin">✳</span>
               작업 중…
             </div>
           )}
@@ -230,24 +354,81 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
         {disabled ? (
           <div className="shrink-0 border-t border-slate-800 px-3 py-3 text-sm text-amber-300">{disabled}</div>
         ) : (
-          <div className="shrink-0 border-t border-slate-800 p-2">
+          <div className="relative shrink-0 border-t border-slate-800 bg-slate-950/60 p-2">
             {error && <div className="mb-1 text-xs text-rose-400">{error}</div>}
+
+            {/* 스킬 자동완성 */}
+            {showSuggest && (
+              <div className="absolute bottom-full left-2 right-2 z-20 mb-1 overflow-hidden rounded-lg border border-violet-500/40 bg-slate-900/95 shadow-xl backdrop-blur">
+                <div className="border-b border-slate-800 px-3 py-1 text-[10px] text-slate-500">⚡ 스킬 · ↑↓ 고르기 · Tab/Enter 넣기</div>
+                {suggestions.map((k, i) => (
+                  <button
+                    key={k.name}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      choose(k.name);
+                    }}
+                    className={`flex w-full items-baseline gap-2 px-3 py-1.5 text-left ${
+                      i === pick ? "bg-violet-500/20" : "hover:bg-slate-800"
+                    }`}
+                  >
+                    <span className="shrink-0 font-mono text-xs font-semibold text-violet-200">/{k.name}</span>
+                    <span className="truncate text-[11px] text-slate-500">{k.description}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* 이 글에 들어간 스킬 */}
+            {draftSkills.length > 0 && (
+              <div className="mb-1.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
+                <span>사용할 명령</span>
+                {draftSkills.map((k) => k && <SkillChip key={k.name} name={k.name} state={k.state} />)}
+                {draftSkills.some((k) => k?.state === "unknown") && (
+                  <span className="text-amber-300/80">· ? 는 설치된 스킬이 아니라 그냥 글로 전달돼요</span>
+                )}
+              </div>
+            )}
+
             <div className="flex items-end gap-2">
-              <textarea
-                ref={registerChatInput}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={onKeyDown}
-                rows={2}
-                maxLength={8000}
-                placeholder={running ? "끝나면 이어서 보낼 수 있어요" : "Claude 에게 시킬 일"}
-                className="min-w-0 flex-1 resize-none rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-base text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
-              />
+              <div className="relative min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 focus-within:border-orange-400/60 focus-within:ring-2 focus-within:ring-orange-400/15">
+                <span className="pointer-events-none absolute left-2.5 top-2 font-mono text-base leading-6 text-orange-400">❯</span>
+                <div
+                  ref={layerRef}
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words py-2 pl-7 pr-2.5 text-base leading-6 text-transparent"
+                >
+                  <HighlightLayer text={draft} known={known} />
+                </div>
+                <textarea
+                  ref={(el) => {
+                    inputRef.current = el;
+                    registerChatInput(el);
+                  }}
+                  value={draft}
+                  onChange={(e) => {
+                    setDraft(e.target.value);
+                    setCaret(e.target.selectionStart);
+                    setPick(0);
+                  }}
+                  onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+                  onBlur={() => setCaret(-1)}
+                  onScroll={(e) => {
+                    if (layerRef.current) layerRef.current.scrollTop = e.currentTarget.scrollTop;
+                  }}
+                  onKeyDown={onKeyDown}
+                  rows={2}
+                  maxLength={8000}
+                  placeholder={running ? "끝나면 이어서 보낼 수 있어요" : "Claude 에게 시킬 일  ·  / 스킬"}
+                  className="relative block w-full resize-none bg-transparent py-2 pl-7 pr-2.5 text-base leading-6 text-slate-100 caret-orange-400 placeholder:text-slate-600 focus:outline-none"
+                />
+              </div>
               {running ? (
                 <button
                   type="button"
                   onClick={() => void stop()}
-                  className="shrink-0 rounded-md bg-rose-600 px-3 py-2 text-sm font-bold text-white hover:bg-rose-500"
+                  className="shrink-0 rounded-lg bg-rose-600 px-3.5 py-2.5 text-sm font-bold text-white hover:bg-rose-500"
                 >
                   멈춤
                 </button>
@@ -256,11 +437,14 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
                   type="button"
                   onClick={submit}
                   disabled={!draft.trim() || !target}
-                  className="shrink-0 rounded-md bg-sky-600 px-3 py-2 text-sm font-bold text-white hover:bg-sky-500 disabled:opacity-40"
+                  className="shrink-0 rounded-lg bg-gradient-to-br from-orange-500 to-rose-500 px-3.5 py-2.5 text-sm font-bold text-white shadow-md shadow-rose-950/40 hover:brightness-110 disabled:opacity-40"
                 >
                   보내기
                 </button>
               )}
+            </div>
+            <div className="mt-1 hidden md:block px-1 text-[10px] text-slate-600">
+              Enter 보내기 · Shift+Enter 줄바꿈 · / 스킬 목록
             </div>
           </div>
         )}

@@ -375,6 +375,17 @@ export const useChatStore = create<ChatStore>()((set, get) => {
   };
 });
 
+export interface SkillInfo {
+  name: string;
+  description: string;
+}
+
+/** 쓸 수 있는 /스킬 목록(전역·플러그인 + 세션 폴더의 프로젝트 스킬) */
+export function fetchSkills(sessionId?: string | null): Promise<SkillInfo[]> {
+  const q = sessionId && isClaudeSessionId(sessionId) ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+  return call<SkillInfo[]>("GET", `/skills${q}`);
+}
+
 // PeerPopup → 채팅 입력칸. iOS 는 사용자 탭 안에서 바로 focus 해야 키보드가 뜬다.
 let inputEl: HTMLTextAreaElement | null = null;
 export function registerChatInput(el: HTMLTextAreaElement | null): void {

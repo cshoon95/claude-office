@@ -268,6 +268,51 @@ def read_history(session_id: str, limit: int = HISTORY_MAX) -> list[dict[str, An
 
 
 # ---------------------------------------------------------------------------
+# 스킬 목록 — 채팅창에서 /스킬 을 알아보고 자동완성하려고
+# ---------------------------------------------------------------------------
+
+_DESC_RE = re.compile(r"^description:\s*(.+)$", re.M)
+
+
+def _skill_desc(md: Path) -> str:
+    try:
+        head = md.read_text(encoding="utf-8", errors="replace")[:3000]
+    except OSError:
+        return ""
+    m = _DESC_RE.search(head)
+    return m.group(1).strip().strip("\"'")[:160] if m else ""
+
+
+def _scan_skills(base: Path, prefix: str, out: dict[str, str]) -> None:
+    for md in sorted(base.glob("*/SKILL.md")):
+        out.setdefault(prefix + md.parent.name, _skill_desc(md))
+    cmds = base.parent / "commands"
+    for md in sorted(cmds.glob("*.md")) if base.name == "skills" else []:
+        out.setdefault(prefix + md.stem, _skill_desc(md))
+
+
+def list_skills(cwd: str | None) -> list[dict[str, str]]:
+    claude = Path(os.environ.get("CLAUDE_OFFICE_CLAUDE_HOME") or Path.home() / ".claude")
+    out: dict[str, str] = {}
+    if cwd:  # 프로젝트 스킬이 먼저(같은 이름이면 프로젝트 것이 쓰인다)
+        _scan_skills(Path(cwd) / ".claude/skills", "", out)
+    _scan_skills(claude / "skills", "", out)
+    for d in sorted((claude / "skills/synced").glob("*")):
+        _scan_skills(d, "anthropic-skills:", out)
+    # 플러그인: plugins/cache/<마켓>/<플러그인>/<버전>/skills/<이름> — 최신 버전만
+    newest: dict[str, Path] = {}
+    for ver in (claude / "plugins/cache").glob("*/*/*"):
+        if (ver / "skills").is_dir():
+            plugin = ver.parent.name
+            if plugin not in newest or ver.stat().st_mtime > newest[plugin].stat().st_mtime:
+                newest[plugin] = ver
+    for plugin, ver in sorted(newest.items()):
+        _scan_skills(ver / "skills", f"{plugin}:", out)
+    out.pop("synced", None)
+    return [{"name": k, "description": v} for k, v in out.items()]
+
+
+# ---------------------------------------------------------------------------
 # 실행 기록(메모리)
 # ---------------------------------------------------------------------------
 
@@ -510,6 +555,15 @@ class RunCreate(BaseModel):
 @router.get("/folders")
 async def list_folders() -> list[dict[str, str]]:
     return _folders()
+
+
+@router.get("/skills")
+async def get_skills(session_id: str | None = None) -> list[dict[str, str]]:
+    cwd = None
+    if session_id:
+        with contextlib.suppress(ValueError):
+            cwd = _transcript_cwd(str(uuid.UUID(session_id)))
+    return await asyncio.to_thread(list_skills, cwd)
 
 
 @router.get("/history")
