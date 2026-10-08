@@ -16,9 +16,21 @@ import {
 } from "./layout";
 
 // Ended sessions linger in the Ended zone for this long after they finish.
-const RECENT_ENDED_MS = 30 * 60 * 1000;
+// (로컬 커스텀) 끝난 세션은 퇴근시키지 않고 3시간 동안 "휴식 중" 칸에서 논다
+const RECENT_ENDED_MS = 3 * 60 * 60 * 1000;
+// 완료 후 이만큼 조용하면 소파(완료)에서 휴식 칸으로 옮긴다
+const REST_AFTER_MS = 5 * 60 * 1000;
+// 휴식 칸 놀이 — 2분마다 바뀐다
+export const ACTIVITIES = ["run", "jump", "pushup", "ball", "dance", "stretch", "sleep"] as const;
+export type Activity = (typeof ACTIVITIES)[number];
+function activityFor(id: string, now: number): Activity {
+  let h = 7;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return ACTIVITIES[(h + Math.floor(now / 120000)) % ACTIVITIES.length];
+}
 
 export interface CommandPeer {
+  activity: Activity;
   sessionId: string;
   label: string;
   bucket: ZoneKey;
@@ -145,10 +157,16 @@ export function useCommandCenterPeers(sessions: Session[]): CommandCenterPeers {
     for (const e of entries) {
       const session = sessionById.get(e.sessionId);
       // The backend marks finished sessions "completed" (not "active").
+      const quiet = session ? now - new Date(session.updatedAt).getTime() : 0;
       const bucket: ZoneKey =
-        session && session.status !== "active" ? "ended" : e.bucket;
+        session && session.status !== "active"
+          ? "ended"
+          : e.bucket === "done" && quiet > REST_AFTER_MS
+            ? "ended"
+            : e.bucket;
       seen.add(e.sessionId);
       byZone[bucket].push({
+        activity: activityFor(e.sessionId, now),
         sessionId: e.sessionId,
         label: labelFor(session, e.sessionId),
         bucket,
@@ -167,6 +185,7 @@ export function useCommandCenterPeers(sessions: Session[]): CommandCenterPeers {
       const endedAt = new Date(s.updatedAt).getTime();
       if (Number.isNaN(endedAt) || now - endedAt > RECENT_ENDED_MS) continue;
       byZone.ended.push({
+        activity: activityFor(s.id, now),
         sessionId: s.id,
         label: labelFor(s, s.id),
         bucket: "ended",

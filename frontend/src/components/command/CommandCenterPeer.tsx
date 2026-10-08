@@ -6,7 +6,16 @@ import { Assets, type Container, Graphics, Rectangle, type Sprite, Texture } fro
 import type { Position } from "@/types";
 import { useMotionStore, selectMotionPos } from "@/systems/commandCenterMotion";
 import { ZONE_BY_KEY, TOP_WALL_H, EXIT_DOOR_X } from "./layout";
-import type { CommandPeer } from "./useCommandCenterPeers";
+import type { Activity, CommandPeer } from "./useCommandCenterPeers";
+
+// ── 휴식 칸 놀이(로컬 커스텀) ──
+const ACT_LABEL: Record<Activity, string> = {
+  run: "🏃 달리기", jump: "🤸 점프", pushup: "💪 팔굽혀펴기", ball: "🏀 드리블",
+  dance: "🕺 춤", stretch: "🧘 스트레칭", sleep: "💤 낮잠",
+};
+const ACT_ICON: Record<Activity, string> = {
+  run: "🏃", jump: "🤸", pushup: "💪", ball: "🏀", dance: "🕺", stretch: "🧘", sleep: "💤",
+};
 
 // ── 놀거리(로컬 커스텀): 쉬는 세션이 가끔 다녀오는 곳 ──
 const WALK_Y = TOP_WALL_H + 34; // 벽 앞 통로
@@ -268,12 +277,20 @@ function CommandCenterPeerComponent({
   const spriteRef = useRef<Sprite | null>(null);
   const canWander = peer.bucket === "done" && !positionOverride;
   // tick 이 읽는 최신 값(콜백은 한 번만 등록)
-  const live = useRef({ bucket: peer.bucket, basePos, canWander, frames: null as Texture[] | null });
+  const live = useRef({
+    bucket: peer.bucket, basePos, canWander, frames: null as Texture[] | null,
+    activity: peer.activity, phase: 0,
+  });
   useLayoutEffect(() => {
     live.current.bucket = peer.bucket;
     live.current.basePos = basePos;
     live.current.canWander = canWander;
+    live.current.activity = peer.activity;
   });
+  useEffect(() => {
+    live.current.phase = Math.random() * 10; // 같은 놀이라도 박자가 다르게
+  }, []);
+  const ballRef = useRef<Graphics | null>(null);
 
   const tick = useCallback((ticker: { deltaMS: number }) => {
     const t = performance.now();
@@ -302,7 +319,7 @@ function CommandCenterPeerComponent({
 
     const walkingNow = e.phase === "go" || e.phase === "back";
     // 몸 흔들림: 작업 중 = 타자(빠르고 잔잔), 대기 = 통통 튐, 걷기 = 걸음, 그 외 = 숨쉬기
-    const bobNow =
+    let bobNow =
       L.bucket === "working"
         ? Math.sin(t / 70) * 1.6
         : L.bucket === "needs_you"
@@ -310,28 +327,78 @@ function CommandCenterPeerComponent({
           : walkingNow
             ? -Math.abs(Math.sin(t / 90)) * 4
             : Math.sin(t / 700) * 1.2;
-    if (bodyRef.current) bodyRef.current.y = bobNow;
+    // 정면 행: 걷기 0-1-2-1, 작업 중 타자 5-6, 대기 4(손들기), 그 외 0 · 옆면 행은 14~
+    let col = walkingNow
+      ? [0, 1, 2, 1][Math.floor(t / 140) % 4]
+      : L.bucket === "working"
+        ? 5 + (Math.floor(t / 260) % 2)
+        : L.bucket === "needs_you"
+          ? 4
+          : 0;
+    let ox = 0, oy = 0, rot = 0, flip = 1, lying = false, ballY: number | null = null;
+    if (L.bucket === "ended") {
+      const ph = L.phase;
+      switch (L.activity) {
+        case "run": {
+          const a = t / 900 + ph;
+          ox = Math.cos(a) * 46; oy = Math.sin(a) * 34;
+          flip = Math.sin(a) > 0 ? -1 : 1;
+          col = 14 + [0, 1, 2, 1][Math.floor(t / 90) % 4];
+          bobNow = -Math.abs(Math.sin(t / 90)) * 5;
+          break;
+        }
+        case "jump": {
+          const s = Math.abs(Math.sin(t / 230 + ph));
+          bobNow = -s * 24; col = s > 0.35 ? 4 : 0;
+          break;
+        }
+        case "pushup":
+          lying = true; rot = -Math.PI / 2; bobNow = -Math.abs(Math.sin(t / 320 + ph)) * 7;
+          break;
+        case "ball": {
+          const s = Math.abs(Math.sin(t / 190 + ph));
+          ballY = -6 - (1 - s) * 34; bobNow = -s * 2; col = 4;
+          break;
+        }
+        case "dance": {
+          const beat = Math.floor((t + ph * 1000) / 360);
+          bobNow = -Math.abs(Math.sin(t / 180)) * 9; flip = beat % 2 ? -1 : 1;
+          col = beat % 4 < 2 ? 4 : 14 + (beat % 3);
+          break;
+        }
+        case "stretch":
+          rot = Math.sin(t / 650 + ph) * 0.38; col = 4; bobNow = 0;
+          break;
+        case "sleep":
+          lying = true; rot = -Math.PI / 2; bobNow = Math.sin(t / 900) * 1.5;
+          break;
+      }
+    }
+    if (bodyRef.current) {
+      bodyRef.current.y = bobNow;
+      bodyRef.current.x = lying ? 46 : 0;
+      bodyRef.current.rotation = rot;
+    }
+    if (ballRef.current) {
+      ballRef.current.visible = ballY !== null;
+      if (ballY !== null) ballRef.current.y = ballY;
+    }
     if (bubbleRef.current) {
-      bubbleRef.current.y = BUBBLE_Y + bobNow;
+      bubbleRef.current.y = BUBBLE_Y + (lying ? 30 : Math.min(bobNow, 0) * 0.4);
       bubbleRef.current.alpha = L.bucket === "needs_you" ? 0.65 + 0.35 * Math.abs(Math.sin(t / 300)) : 1;
     }
-    const p = e.pos ?? L.basePos;
+    const base = e.pos ?? L.basePos;
+    const p = { x: base.x + ox, y: base.y + oy };
     if (rootRef.current && (rootRef.current.x !== p.x || rootRef.current.y !== p.y)) {
       rootRef.current.x = p.x;
       rootRef.current.y = p.y;
       rootRef.current.zIndex = p.y;
     }
-    // 정면 행: 걷기 0-1-2-1, 작업 중 타자 5-6, 대기 4(손들기), 그 외 0
     const frames = L.frames;
     if (frames && spriteRef.current) {
-      const col = walkingNow
-        ? [0, 1, 2, 1][Math.floor(t / 140) % 4]
-        : L.bucket === "working"
-          ? 5 + (Math.floor(t / 260) % 2)
-          : L.bucket === "needs_you"
-            ? 4
-            : 0;
       if (spriteRef.current.texture !== frames[col]) spriteRef.current.texture = frames[col];
+      const sx = 3.6 * flip;
+      if (spriteRef.current.scale.x !== sx) spriteRef.current.scale.x = sx;
     }
   }, []);
   useTick(tick);
@@ -346,7 +413,9 @@ function CommandCenterPeerComponent({
     : peer.bucket === "working"
       ? shortTask(peer.currentTask)
       : peer.bucket === "ended"
-        ? "💤"
+        ? lastAsk
+          ? `✓ ${lastAsk}`
+          : ACT_LABEL[peer.activity]
         : lastAsk
           ? `✓ ${lastAsk}`
           : view.phase === "stay"
@@ -436,8 +505,9 @@ function CommandCenterPeerComponent({
   }, []);
 
   // Office-style nameplate behind the project label.
-  const shortLabel =
+  const baseLabel =
     peer.label.length > 16 ? `${peer.label.slice(0, 15)}…` : peer.label;
+  const shortLabel = peer.bucket === "ended" ? `${ACT_ICON[peer.activity]} ${baseLabel}` : baseLabel;
   const plateW = shortLabel.length * 12 + 22; // 2x units (container scaled 0.5)
   const drawPlate = useCallback(
     (g: Graphics) => {
@@ -449,6 +519,16 @@ function CommandCenterPeerComponent({
     },
     [plateW, accent],
   );
+
+  const drawBall = useCallback((g: Graphics) => {
+    g.clear();
+    g.circle(0, 0, 7);
+    g.fill({ color: 0xf97316 });
+    g.circle(0, 0, 7);
+    g.stroke({ color: 0x7c2d12, width: 1.5 });
+    g.moveTo(-7, 0).lineTo(7, 0);
+    g.stroke({ color: 0x7c2d12, width: 1 });
+  }, []);
 
   const handleTap = useCallback(
     (e: {
@@ -499,6 +579,14 @@ function CommandCenterPeerComponent({
           <pixiGraphics draw={drawBody} />
         )}
       </pixiContainer>
+
+      {/* 드리블 공(휴식 칸) */}
+      <pixiGraphics
+        ref={ballRef}
+        x={24}
+        visible={false}
+        draw={drawBall}
+      />
 
       {/* Project nameplate */}
       <pixiContainer y={NAMEPLATE_Y} scale={0.75}>

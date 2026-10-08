@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { ZONE_BY_KEY, ZONE_ORDER, type ZoneKey } from "./layout";
 import { manualApi } from "./manualApi";
 
-const ZONE_KO: Record<ZoneKey, string> = { needs_you: "내 차례", working: "작업 중", done: "완료", ended: "종료" };
+const ZONE_KO: Record<ZoneKey, string> = { needs_you: "내 차례", working: "작업 중", done: "완료", ended: "휴식" };
 export { ZONE_KO };
 
 export function ManualTaskModal({ open, onClose }: { open: boolean; onClose: () => void }): ReactNode {

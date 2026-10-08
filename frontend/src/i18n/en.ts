@@ -26,9 +26,9 @@ const en = {
   // Command Center
   "commandCenter.title": "Command Center",
   "commandCenter.zone.needsYou": "확인 필요",
-  "commandCenter.zone.working": "Working",
-  "commandCenter.zone.done": "Done",
-  "commandCenter.zone.ended": "Ended",
+  "commandCenter.zone.working": "작업 중",
+  "commandCenter.zone.done": "완료",
+  "commandCenter.zone.ended": "휴식 중",
   "commandCenter.moreCount": "+{count} more",
   "commandCenter.popup.todos": "Todos",
   "commandCenter.popup.employees": "Employees",

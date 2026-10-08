@@ -250,12 +250,74 @@ function ExitDoorComponent({
 const ExitDoor = memo(ExitDoorComponent);
 
 // ============================================================================
+// (로컬 커스텀) GYM — 휴식 칸 바닥: 트랙·매트·농구 골대·덤벨
+// ============================================================================
+
+function GymFloorComponent({ zone }: { zone: ZoneDef }): ReactNode {
+  const draw = useCallback(
+    (g: Graphics) => {
+      g.clear();
+      const cx = zone.x + zone.w / 2;
+      const top = zone.y + 60;
+      const bottom = zone.y + zone.h - 30;
+      // 러닝 트랙(세로로 긴 타원 두 줄)
+      const rx = zone.w / 2 - 26;
+      const ry = (bottom - top) / 2;
+      const cy = (top + bottom) / 2;
+      g.ellipse(cx, cy, rx, ry);
+      g.stroke({ color: 0xc2410c, width: 14, alpha: 0.35 });
+      g.ellipse(cx, cy, rx, ry);
+      g.stroke({ color: 0xffffff, width: 1.5, alpha: 0.35 });
+      g.ellipse(cx, cy, rx - 14, ry - 14);
+      g.stroke({ color: 0xffffff, width: 1, alpha: 0.18 });
+      // 요가 매트(놀이 자리 밑)
+      for (let i = 0; i < 6; i++) {
+        const p = slotPosition(zone, i);
+        g.roundRect(p.x - 34, p.y - 8, 68, 20, 5);
+        g.fill({ color: [0x7c3aed, 0x0ea5e9, 0x10b981, 0xf43f5e, 0xf59e0b, 0x6366f1][i], alpha: 0.28 });
+      }
+      // 농구 골대(오른쪽 위)
+      const hx = zone.x + zone.w - 44;
+      const hy = top + 30;
+      g.rect(hx + 14, hy - 4, 5, 70);
+      g.fill({ color: 0x6b7280 });
+      g.roundRect(hx - 14, hy - 30, 40, 28, 3);
+      g.fill({ color: 0xf8fafc });
+      g.roundRect(hx - 14, hy - 30, 40, 28, 3);
+      g.stroke({ color: 0xef4444, width: 2 });
+      g.ellipse(hx + 6, hy, 12, 4);
+      g.stroke({ color: 0xf97316, width: 3 });
+      // 덤벨 두 개(왼쪽 아래)
+      for (const [dx, dy] of [[0, 0], [30, 12]]) {
+        const x = zone.x + 34 + dx;
+        const y = bottom - 40 + dy;
+        g.rect(x, y, 22, 4);
+        g.fill({ color: 0x9ca3af });
+        g.roundRect(x - 6, y - 5, 8, 14, 2);
+        g.roundRect(x + 20, y - 5, 8, 14, 2);
+        g.fill({ color: 0x374151 });
+      }
+    },
+    [zone],
+  );
+  return <pixiGraphics draw={draw} zIndex={-1} />;
+}
+
+const GymFloor = memo(GymFloorComponent);
+
+// ============================================================================
 // FURNITURE LAYER (static — drawn once, never follows agents)
 // ============================================================================
 
 function zoneFurniture(zone: ZoneDef, textures: OfficeTextures): ReactNode[] {
   if (zone.kind === "exit") {
     return [<ExitDoor key={`${zone.key}-exit`} textures={textures} />];
+  }
+  if (zone.kind === "gym") {
+    return [
+      <GymFloor key={`${zone.key}-gym`} zone={zone} />,
+      <ExitDoor key={`${zone.key}-exit`} textures={textures} />,
+    ];
   }
   const items: ReactNode[] = [];
   for (let slot = 0; slot < DESK_SLOTS; slot++) {

@@ -14,7 +14,6 @@ import {
   CANVAS_HEIGHT,
   BACKGROUND_COLOR,
 } from "@/constants/canvas";
-import { useExitStore, useExitDriver } from "@/systems/exitAnimation";
 import {
   setMotionTargets,
   useMotionCleanup,
@@ -28,7 +27,6 @@ import { CommandCenterDecor } from "./CommandCenterDecor";
 import { CommandCenterFurniture } from "./CommandCenterFurniture";
 import { CommandCenterBoard } from "./CommandCenterBoard";
 import { CommandCenterPeer } from "./CommandCenterPeer";
-import { ExitingPeer } from "./ExitingPeer";
 import type { CommandPeer, CommandSummary } from "./useCommandCenterPeers";
 import type { ZoneKey } from "./layout";
 
@@ -57,23 +55,9 @@ export function CommandCenterCanvas({
   useMotionCleanup();
   useEffect(() => {
     setMotionTargets(
-      peers
-        .filter((p) => p.bucket !== "ended")
-        .map((p) => ({ id: p.sessionId, target: p.position })),
+      // (로컬 커스텀) 휴식 칸(ended)도 걸어서 자리로 — 퇴근 애니메이션은 안 쓴다
+      peers.map((p) => ({ id: p.sessionId, target: p.position })),
     );
-  }, [peers]);
-
-  // Exit animation: only sessions seen active and then ended *while watching*
-  // walk out. Sessions already ended when the view opened are skipped.
-  useExitDriver();
-  const seenActiveRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const seen = seenActiveRef.current;
-    for (const p of peers) if (p.bucket !== "ended") seen.add(p.sessionId);
-    const exiting = peers
-      .filter((p) => p.bucket === "ended" && seen.has(p.sessionId))
-      .map((p) => p.sessionId);
-    useExitStore.getState().registerEnded(exiting, performance.now());
   }, [peers]);
 
   // Reset pan/zoom only on actual window resize — mirrors OfficeGame so the
@@ -141,25 +125,15 @@ export function CommandCenterCanvas({
                   </pixiContainer>
                   <CommandCenterFurniture textures={textures} />
                   <pixiContainer sortableChildren={true}>
-                    {peers.map((peer) =>
-                      peer.bucket === "ended" ? (
-                        <ExitingPeer
-                          key={peer.sessionId}
-                          peer={peer}
-                          headsetTexture={textures.headset}
-                          sunglassesTexture={textures.sunglasses}
-                          onActivate={onPeerActivate}
-                        />
-                      ) : (
-                        <CommandCenterPeer
-                          key={peer.sessionId}
-                          peer={peer}
-                          headsetTexture={textures.headset}
-                          sunglassesTexture={textures.sunglasses}
-                          onActivate={onPeerActivate}
-                        />
-                      ),
-                    )}
+                    {peers.map((peer) => (
+                      <CommandCenterPeer
+                        key={peer.sessionId}
+                        peer={peer}
+                        headsetTexture={textures.headset}
+                        sunglassesTexture={textures.sunglasses}
+                        onActivate={onPeerActivate}
+                      />
+                    ))}
                   </pixiContainer>
                 </>
               )}

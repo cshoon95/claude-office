@@ -15,7 +15,7 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT } from "@/constants/canvas";
 export type ZoneKey = OverviewBucket | "ended";
 
 /** What fixed furniture a column shows. */
-export type ZoneKind = "desks" | "lounge" | "exit";
+export type ZoneKind = "desks" | "lounge" | "exit" | "gym";
 
 export interface ZoneDef {
   key: ZoneKey;
@@ -72,12 +72,13 @@ const COL_DEFS: Array<{
     cssColor: "#3b82f6",
   },
   {
+    // (로컬 커스텀) 4번째 칸 = 휴식 중: 쉰 지 오래됐거나 끝난 세션이 뛰고 운동하며 논다
     key: "ended",
-    kind: "exit",
+    kind: "gym",
     labelKey: "commandCenter.zone.ended",
-    emoji: "⚪",
-    color: 0x64748b,
-    cssColor: "#64748b",
+    emoji: "🏃",
+    color: 0xa78bfa,
+    cssColor: "#a78bfa",
   },
 ];
 
@@ -119,6 +120,12 @@ export const MAX_SLOTS = DESK_ROWS * 2; // 6
 
 /** Pixel position (agent feet) for the slot at *index* within *zone* (column). */
 export function slotPosition(zone: ZoneDef, index: number): Position {
+  if (zone.kind === "gym") {
+    // 휴식 칸: 2열 × 3행 놀이 자리(책상 없음)
+    const col = index % 2;
+    const row = Math.floor(index / 2) % DESK_ROWS;
+    return { x: zone.x + zone.w * (col ? 0.7 : 0.3), y: ROW_TOP + row * ROW_GAP - 20 };
+  }
   const row = index % DESK_ROWS;
   const standing = index >= DESK_ROWS;
   const x = zone.x + zone.w / 2 + (standing ? STANDING_DX : 0);
