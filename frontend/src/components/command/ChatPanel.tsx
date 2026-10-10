@@ -305,7 +305,7 @@ export function ChatPanel({ sessions }: { sessions: Session[] }): ReactNode {
 
   return (
     <div
-      className={`flex flex-col flex-1 min-h-0 md:flex-none overflow-hidden rounded-xl border border-slate-700/70 bg-[#0a0e17] shadow-2xl shadow-black/40 ring-1 ring-white/5 ${
+      className={`flex flex-col flex-1 min-h-[14rem] md:min-h-0 md:flex-none overflow-hidden rounded-xl border border-slate-700/70 bg-[#0a0e17] shadow-2xl shadow-black/40 ring-1 ring-white/5 ${
         collapsed ? "md:h-auto" : "md:h-80"
       }`}
     >

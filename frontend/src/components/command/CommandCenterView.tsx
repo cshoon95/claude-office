@@ -1,7 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from "@/constants/canvas";
 import { SessionSidebar } from "@/components/layout/SessionSidebar";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useOverviewWebSocket } from "@/hooks/useOverviewWebSocket";
@@ -87,6 +88,25 @@ export function CommandCenterView({
   useEffect(() => () => { document.title = DEFAULT_TITLE; }, []);
 
   const [popup, setPopup] = useState<PeerPopupState | null>(null);
+  // (로컬 커스텀) 캔버스 상자를 사무실 비율에 맞춰 칸 안에 꽉 차게(contain) 잰다
+  const [canvasBox, setCanvasBox] = useState<{ width: number; height: number } | null>(null);
+  const slotObserver = useRef<ResizeObserver | null>(null);
+  // 콜백 ref — 칸이 나중에 마운트돼도(로딩 뒤) 관찰을 건다
+  const canvasSlotRef = useCallback((el: HTMLDivElement | null) => {
+    slotObserver.current?.disconnect();
+    slotObserver.current = null;
+    if (!el) return;
+    const ratio = CANVAS_WIDTH / CANVAS_HEIGHT;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width: w, height: h } = entry.contentRect;
+      if (w <= 0 || h <= 0) return;
+      const width = Math.floor(Math.min(w, h * ratio));
+      const height = Math.floor(width / ratio);
+      setCanvasBox((b) => (b && b.width === width && b.height === height ? b : { width, height }));
+    });
+    ro.observe(el);
+    slotObserver.current = ro;
+  }, []);
   const [addOpen, setAddOpen] = useState(false);
   const refreshManual = useManualStore((s) => s.refresh);
   useEffect(() => {
@@ -190,15 +210,25 @@ export function CommandCenterView({
           </span>
         </div>
 
-        {/* Canvas — (로컬 커스텀) 휴대폰에선 높이를 고정하고 아래를 채팅에 준다 */}
-        <div className="h-[42svh] shrink-0 md:h-auto md:shrink md:flex-grow border border-slate-800 rounded-lg shadow-2xl bg-slate-900 overflow-hidden relative min-h-0">
-          <CommandCenterCanvas
-            peers={peers}
-            counts={counts}
-            overflow={overflow}
-            summary={summary}
-            onPeerActivate={handlePeerActivate}
-          />
+        {/* Canvas — (로컬 커스텀) 좁은 화면(휴대폰·창 앱)에선 사무실 비율(5:4)대로 폭을 꽉 채우고
+            남는 높이를 채팅에 준다. 높이가 모자라면 비율을 지킨 채 가운데로 줄인다 —
+            캔버스가 상자와 같은 비율이라 잘리지도, 옆이 비지도 않는다(클릭 위치도 정확). */}
+        <div
+          ref={canvasSlotRef}
+          className="w-full aspect-[5/4] shrink min-h-0 md:aspect-auto md:flex-grow flex justify-center"
+        >
+          <div
+            className="border border-slate-800 rounded-lg shadow-2xl bg-slate-900 overflow-hidden relative"
+            style={canvasBox ?? { width: "100%", height: "100%" }}
+          >
+            <CommandCenterCanvas
+              peers={peers}
+              counts={counts}
+              overflow={overflow}
+              summary={summary}
+              onPeerActivate={handlePeerActivate}
+            />
+          </div>
         </div>
 
         {/* (로컬 커스텀) Claude 에게 말 걸기 */}
